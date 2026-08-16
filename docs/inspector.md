@@ -46,6 +46,13 @@ Open the printed URL — the token is part of it, and the plain
 | `conference` | `http://127.0.0.1:8099/mcp` | — |
 | `organizer` | `http://127.0.0.1:8099/mcp/organizer` | header `Authorization: Bearer organizer-demo-token` |
 | `diagnostics` | `http://127.0.0.1:8099/mcp/diagnostics` | — |
+| `modern` | `http://127.0.0.1:8099/mcp/2026` | version negotiation → **Auto** or **Modern** |
+
+The version-negotiation control defaults to **Legacy (2025-11-25 handshake)**, so
+the modern endpoint needs it changed or the Inspector opens with `initialize` and
+is refused with `-32602`. **Auto (probe, fall back to legacy)** is the better
+setting to test with: it probes `server/discover` first, which exercises the
+detection path a client is meant to use.
 
 The token is `MCP_DEMO_ORGANIZER_TOKEN` from `.env`; add it under
 *Authentication → Header Name / Bearer Token*, or as a custom header.
@@ -249,6 +256,17 @@ paging is invisible — which is the point. To see the pages themselves, use
 *back* to the Inspector mid-call. Over HTTP that deadlocks on a single-worker PHP
 server; `make serve` sets `PHP_CLI_SERVER_WORKERS`. Over STDIO it is not an
 issue. Full explanation in [`deployment.md`](deployment.md).
+
+**The CLI is pinned to the handshake era.** All three Inspector clients default
+to `versionNegotiation: { mode: 'legacy' }`, and only the UI exposes a control to
+change it — the CLI has no flag and its config file carries no such key. So
+`--cli` cannot reach `/mcp/2026` at all, and `make inspector-tour` covers only
+the handshake servers. For the modern endpoint use the UI, or the demo's own
+client:
+
+```console
+$ make regression-2026
+```
 
 **The Inspector is not a model.** Sampling (`review_proposal`) needs a client
 that can run a completion; the CLI advertises none, so the tool degrades to

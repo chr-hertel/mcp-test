@@ -319,6 +319,21 @@ but because the bundle has no seam to reach them through.
 The smallest useful addition would be `mcp.servers.<name>.protocol_version`,
 mirroring the option the client side already has.
 
+### The Inspector reaches 2026-07-28, but not by default
+
+Worth recording because it is easy to conclude the opposite. Inspector 2.2.0
+bundles `@modelcontextprotocol/client@2.0.0`, which knows the revision and speaks
+`server/discover` — but all three of its clients hardcode the same default:
+
+```js
+versionNegotiation = options.versionNegotiation ?? { mode: "legacy" }
+```
+
+Only the web UI exposes a control for it (*Auto* / *Legacy* / *Modern*). The CLI
+has no flag and its config file carries no such key, so `--cli` opens with
+`initialize` and a stateless server refuses it with `-32602` — which reads as "no
+support" and is not.
+
 ### The SDK's client cannot speak 2026-07-28
 
 `Mcp\Client\Protocol::initialize()` falls back to the newest *handshake*

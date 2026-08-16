@@ -53,6 +53,7 @@ final class ModernRegressionRunner
         $this->checkMultiRoundTrip($client, $endpoint);
         $this->checkTasks($client);
         $this->checkHeaders($client, $endpoint);
+        $this->checkApps($client);
         $this->checkRemovals($client);
 
         return $this->results;
@@ -408,6 +409,45 @@ final class ModernRegressionRunner
             }
 
             return \sprintf('refused with %d', $envelope['error']['code']);
+        });
+    }
+
+    // -- MCP Apps ------------------------------------------------------------
+
+    private function checkApps(ModernClient $client): void
+    {
+        $this->check('apps', 'the extension is advertised alongside tasks', function () use ($client): string {
+            $extensions = array_keys($this->result($client->discover())['capabilities']['extensions'] ?? []);
+
+            if (!\in_array('io.modelcontextprotocol/ui', $extensions, true)) {
+                throw new \RuntimeException('The MCP Apps extension is not advertised; does the server list "apps"?');
+            }
+
+            return implode(', ', $extensions);
+        });
+
+        $this->check('apps', 'the UI resource is served', function () use ($client): string {
+            $contents = $this->result($client->request('resources/read', ['uri' => 'ui://schedule']))['contents'][0] ?? [];
+
+            if (!str_contains((string) ($contents['mimeType'] ?? ''), 'mcp-app')) {
+                throw new \RuntimeException(\sprintf('ui://schedule came back as "%s".', $contents['mimeType'] ?? 'nothing'));
+            }
+
+            if (!isset(($contents['_meta'] ?? [])['ui'])) {
+                throw new \RuntimeException('The resource carries no _meta.ui marker, so a host will not treat it as an app.');
+            }
+
+            return \sprintf('%s, %d characters', $contents['mimeType'], \strlen($contents['text'] ?? ''));
+        });
+
+        $this->check('apps', 'the app tool renders on the server', function () use ($client): string {
+            $data = $this->structured($client->callTool('browse_schedule', ['day' => '2026-11-19']));
+
+            if (!isset($data['html']) || !str_contains($data['html'], 'data-call=')) {
+                throw new \RuntimeException('The tool result carries no rendered HTML with tool triggers.');
+            }
+
+            return \sprintf('%d characters, %d trigger(s)', \strlen($data['html']), substr_count($data['html'], 'data-call='));
         });
     }
 

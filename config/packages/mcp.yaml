@@ -165,6 +165,7 @@ mcp:
             prompts: ['*']
             resources: ['*']
             resource_templates: ['*']
+            apps: ['*']
 
     # ------------------------------------------------------------------------
     # Clients: the remote MCP servers this application reaches out to.

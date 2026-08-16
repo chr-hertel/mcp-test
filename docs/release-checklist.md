@@ -54,7 +54,7 @@ Nothing below this line is worth doing if these are red.
   | `diagnostics_http` | 18 | 7 |
   | `conference_stdio` | 35 | 1 |
   | `organizer_stdio` | 40 | 1 |
-  | `modern_http` | 22 | 0 |
+  | `modern_http` | 25 | 0 |
 
 - [ ] `make upstream-test` → `mcp/sdk` **1422 tests OK**, `symfony/mcp-bundle` **174 tests OK**
 
@@ -94,7 +94,7 @@ What someone sees before they connect anything.
   | `conference` | 9 | 4 | 7 | 4 |
   | `organizer` | 16 | 4 | 7 | 4 |
   | `diagnostics` | 6 | — | 2 | — |
-  | `modern` | 11 | 4 | 6 | 4 |
+  | `modern` | 14 | 4 | 7 | 4 |
 
   and **no** *Not exposed by any server* section. If one appears, a class
   carries an MCP attribute that no capability list matches — usually a typo in a
@@ -133,8 +133,8 @@ The reference client, which knows nothing about this application.
 
 The reason the SDK branch exists. `make serve` first.
 
-- [ ] `make regression-2026` → **22 passed, 0 failed**, across eight groups:
-      discovery, lifecycle, caching, notifications, MRTR, tasks, headers, removals
+- [ ] `make regression-2026` → **25 passed, 0 failed**, across nine groups:
+      discovery, lifecycle, caching, notifications, MRTR, tasks, headers, apps, removals
 
 - [ ] `server/discover` answers without a handshake, and advertises the tasks
       extension:
@@ -158,9 +158,13 @@ The reason the SDK branch exists. `make serve` first.
 - [ ] A `GET` or `DELETE` on `/mcp/2026` answers **405** — there is no session to
       open a stream on, and none to tear down.
 
-> The MCP Inspector speaks the handshake era, so it cannot drive this endpoint.
-> That is not a demo problem: no released client speaks 2026-07-28 yet, which is
-> why the demo carries its own — see `src/Mcp/Modern/ModernClient.php`.
+- [ ] In the Inspector UI, connect to `/mcp/2026` with version negotiation set to
+      **Auto** or **Modern (2026-07-28, sessionless)** — the default is *Legacy*,
+      which sends `initialize` and is refused with `-32602`. Then open
+      `browse_schedule`: the MCP App renders over the modern lifecycle too.
+
+> The Inspector's **CLI** has no flag for the era and is pinned to legacy, so
+> `make inspector-tour` covers only the handshake servers.
 
 ---
 

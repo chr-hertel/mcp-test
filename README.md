@@ -76,6 +76,7 @@ server-initiated requests.
 | Cache hints (`ttlMs` / `cacheScope`), which the revision requires | `cache:` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | `x-mcp-header` — an argument mirrored into `Mcp-Param-*` and checked | [`ModernLifecycleTool::searchTrack()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | Opt-in progress and logging on the request's own stream | [`ModernLifecycleTool::reindexProgramme()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| MCP Apps over the modern lifecycle | `apps:` on the `modern` server in [`mcp.yaml`](config/packages/mcp.yaml) |
 | A client for the revision, because the SDK has none | [`ModernClient`](src/Mcp/Modern/ModernClient.php) |
 
 Compare `submit_proposal` on the two servers: the handshake-era one calls
@@ -83,7 +84,7 @@ Compare `submit_proposal` on the two servers: the handshake-era one calls
 and is called twice. Same feature, opposite direction.
 
 ```console
-$ make regression-2026     # 22 checks, over real HTTP
+$ make regression-2026     # 25 checks, over real HTTP
 ```
 
 ### Both ends of the same round trip
