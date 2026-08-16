@@ -1,0 +1,48 @@
+{#
+    The fragment the `browse_schedule` tool result carries.
+
+    Rendered on the server, shipped as the tool result's `html` field, injected
+    into #root by the base template. Interactions are declarative: `data-call`
+    names a tool, `data-arg-*` its arguments.
+#}
+<h1>{{ conference }}</h1>
+<p class="lede">
+    {{ slots|length }} talk{{ slots|length == 1 ? '' : 's' }} on {{ day|date('l, j F Y') }}{% if track %} in the {{ track }} track{% endif %} ·
+    <span data-open="{{ website }}">{{ website|replace({'https://': ''}) }}</span>
+</p>
+
+<form class="filters" data-call="browse_schedule">
+    <select name="day" aria-label="Day">
+        {% for candidate in days %}
+            <option value="{{ candidate }}"{{ candidate == day ? ' selected' : '' }}>{{ candidate|date('D j M') }}</option>
+        {% endfor %}
+    </select>
+    <select name="track" aria-label="Track">
+        <option value="">All tracks</option>
+        {% for candidate in tracks %}
+            <option value="{{ candidate.value }}"{{ candidate.value == track ? ' selected' : '' }}>{{ candidate.label }}</option>
+        {% endfor %}
+    </select>
+    <button class="primary" type="submit">Show</button>
+</form>
+
+{% if slots is empty %}
+    <p class="empty">Nothing scheduled here yet.</p>
+{% else %}
+    <ul class="slots">
+        {% for slot in slots %}
+            <li class="slot">
+                <time>{{ slot.starts_at }}–{{ slot.ends_at }}</time>
+                <div>
+                    <div class="title">{{ slot.talk.title }}</div>
+                    <div class="meta">
+                        {{ slot.talk.speaker }} · {{ slot.room }} ({{ slot.capacity }} seats)
+                        <span class="chip">{{ slot.talk.track }}</span>
+                        <span class="chip">{{ slot.talk.level }}</span>
+                    </div>
+                </div>
+                <button data-call="open_talk" data-arg-slug="{{ slot.talk.slug }}">Open</button>
+            </li>
+        {% endfor %}
+    </ul>
+{% endif %}

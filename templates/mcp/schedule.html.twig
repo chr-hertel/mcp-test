@@ -1,0 +1,96 @@
+{#
+    The static shell of the "schedule" MCP App.
+
+    The host reads this once, as the ui://schedule resource, and renders it in a
+    sandboxed iframe. It carries no data: everything on screen arrives later, as
+    the `html` field of a tool result, and lands in #root.
+
+    Only styling and the outer chrome belong here.
+#}
+{% extends '@Mcp/app/base.html.twig' %}
+
+{% block title %}Conference schedule{% endblock %}
+
+{% block style %}
+    :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #14161a;
+        --muted: #5c6470;
+        --line: #e3e6ea;
+        --accent: #009b83;
+        --chip: #f2f4f6;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #14161a;
+            --fg: #eceef1;
+            --muted: #99a1ad;
+            --line: #282c33;
+            --accent: #2fd4b5;
+            --chip: #1e2228;
+        }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: -0.01em; }
+    h2 { font-size: 13px; margin: 20px 0 8px; color: var(--muted); font-weight: 600; }
+    p.lede { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+
+    form.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+    select, button {
+        font: inherit;
+        padding: 5px 9px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--bg);
+        color: var(--fg);
+    }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+    ul.slots { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    li.slot {
+        display: grid;
+        grid-template-columns: 74px 1fr auto;
+        gap: 12px;
+        align-items: baseline;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+    }
+    li.slot time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+    li.slot .title { font-weight: 600; }
+    li.slot .meta { color: var(--muted); font-size: 12px; margin-top: 1px; }
+    li.slot button { padding: 3px 9px; font-size: 12px; }
+
+    .chip {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--chip);
+        font-size: 11px;
+        color: var(--muted);
+    }
+
+    .detail dt { color: var(--muted); font-size: 12px; margin-top: 10px; }
+    .detail dd { margin: 2px 0 0; }
+    .abstract { margin: 12px 0; }
+
+    .empty { color: var(--muted); padding: 20px 0; }
+    .error { color: #c0392b; }
+    a, [data-open] { color: var(--accent); cursor: pointer; }
+{% endblock %}
+
+{#
+    The body is left at the default — a bare <div id="root"></div>. Rendering it
+    here would only be overwritten by the first tool result.
+#}

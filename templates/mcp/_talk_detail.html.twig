@@ -1,0 +1,43 @@
+{#
+    The fragment for the `open_talk` app tool. Same mechanism as the schedule
+    fragment; a different Twig template on the same attribute is all that
+    separates the two views.
+#}
+{% if view == 'error' %}
+    <h1>{{ conference }}</h1>
+    <p class="empty error">{{ message }}</p>
+    <button class="primary" data-call="back_to_schedule" data-arg-day="{{ day }}">Back to the schedule</button>
+{% else %}
+    <h1>{{ talk.title }}</h1>
+    <p class="lede">
+        {{ talk.speaker.name }}{% if talk.speaker.company %} · {{ talk.speaker.company }}{% endif %}
+        <span class="chip">{{ talk.track }}</span>
+        <span class="chip">{{ talk.level }}</span>
+        <span class="chip">{{ talk.duration_minutes }} min</span>
+    </p>
+
+    <p class="abstract">{{ talk.abstract }}</p>
+
+    <dl class="detail">
+        <dt>Scheduled</dt>
+        <dd>
+            {% if talk.schedule %}
+                {{ talk.schedule.starts_at|date('l H:i') }}–{{ talk.schedule.ends_at|date('H:i') }} in {{ talk.schedule.room }}
+            {% else %}
+                Not on the schedule yet.
+            {% endif %}
+        </dd>
+
+        <dt>Tags</dt>
+        <dd>
+            {% for tag in talk.tags %}<span class="chip">{{ tag }}</span> {% else %}—{% endfor %}
+        </dd>
+
+        <dt>Resource URI</dt>
+        <dd><code>{{ talk.uri }}</code></dd>
+    </dl>
+
+    <p style="margin-top:18px">
+        <button class="primary" data-call="back_to_schedule" data-arg-day="{{ day }}">Back to the schedule</button>
+    </p>
+{% endif %}
