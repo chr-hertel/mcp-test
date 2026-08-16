@@ -1,0 +1,115 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ conference.title }} — MCP Demo{% endblock %}
+
+{% block body %}
+    <h1>{{ conference.title }}</h1>
+    <p class="lede">
+        The same programme, served two ways: these pages for people, and the MCP endpoints below for
+        models. Both read the same Doctrine entities through the same services — the only difference is
+        who is asking.
+    </p>
+
+    <div class="stats">
+        <div class="stat"><b>{{ counts.talks }}</b><span>Talks</span></div>
+        <div class="stat"><b>{{ counts.speakers }}</b><span>Speakers</span></div>
+        <div class="stat"><b>{{ counts.scheduled }}</b><span>Scheduled</span></div>
+        <div class="stat"><b>{{ counts.unscheduled }}</b><span>Unscheduled</span></div>
+        <div class="stat"><b>{{ counts.proposals }}</b><span>Proposals</span></div>
+    </div>
+
+    <h2>MCP servers</h2>
+    <p class="lede">
+        Read out of the running container at request time, so this cannot drift from what is actually
+        served. Three servers over one set of attributed services: which of them a server exposes is
+        decided in <code>config/packages/mcp.yaml</code>, not in the code.
+    </p>
+
+    <div class="grid cols-2">
+        {% for server in servers %}
+            <div class="panel">
+                <h3>
+                    {{ server.name }}
+                    {% if server.endpoint %}
+                        <code class="muted">{{ server.endpoint }}</code>
+                    {% else %}
+                        <span class="chip plain">stdio only</span>
+                    {% endif %}
+                </h3>
+
+                <p class="muted" style="font-size:13px;margin:0 0 12px">
+                    {{ server.tools|length }} tools ·
+                    {{ server.prompts|length }} prompts ·
+                    {{ server.resources|length }} resources ·
+                    {{ server.templates|length }} templates
+                </p>
+
+                <details>
+                    <summary>Tools</summary>
+                    <ul class="plain">
+                        {% for tool in server.tools %}
+                            <li>
+                                <code>{{ tool.name }}</code>
+                                {% if tool.readOnly %}<span class="chip">read-only</span>{% else %}<span class="chip warn">writes</span>{% endif %}
+                                <div class="muted" style="font-size:13px">{{ tool.description }}</div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+
+                {% if server.prompts %}
+                    <details>
+                        <summary>Prompts</summary>
+                        <ul class="plain">
+                            {% for prompt in server.prompts %}
+                                <li><code>{{ prompt.name }}</code>
+                                    <div class="muted" style="font-size:13px">{{ prompt.description }}</div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% endif %}
+
+                {% if server.resources or server.templates %}
+                    <details>
+                        <summary>Resources</summary>
+                        <ul class="plain">
+                            {% for resource in server.resources %}
+                                <li><code>{{ resource.uri }}</code> <span class="chip plain">{{ resource.mimeType }}</span></li>
+                            {% endfor %}
+                            {% for template in server.templates %}
+                                <li><code>{{ template.uriTemplate }}</code> <span class="chip plain">{{ template.mimeType }}</span></li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    <h2>Try it</h2>
+    <div class="grid cols-2">
+        <div class="panel">
+            <h3>From a terminal</h3>
+            <ul class="plain mono" style="font-size:13px">
+                <li>php bin/console debug:mcp</li>
+                <li>php bin/console mcp:client:debug regression conference_stdio</li>
+                <li>php bin/console app:mcp:regression</li>
+                <li>php bin/console app:claude-desktop:config</li>
+            </ul>
+        </div>
+        <div class="panel">
+            <h3>From a host</h3>
+            <p class="muted" style="font-size:13px;margin-top:0">
+                <code>app:claude-desktop:config</code> prints the fragment for Claude Desktop's
+                <code>mcpServers</code>. For the MCP Inspector, point it at
+                <code>{{ url('dashboard')|trim('/', 'right') }}/mcp</code> over Streamable HTTP.
+            </p>
+            <p class="muted" style="font-size:13px;margin-bottom:0">
+                The <code>organizer</code> endpoint needs
+                <code>Authorization: Bearer &lt;MCP_DEMO_ORGANIZER_TOKEN&gt;</code>; over STDIO it is
+                unauthenticated, because the process boundary is the boundary.
+            </p>
+        </div>
+    </div>
+{% endblock %}

@@ -1,3 +1,17 @@
+symfony/mcp-bundle: let a client answer roots/list
+
+The bundle had a `clients.<name>.capabilities.roots` boolean but no way to
+register a handler, so a client that set it advertised the roots capability and
+then answered "method not found" to the server's `roots/list` request — which
+reaches the model as an opaque protocol error.
+
+Adds `clients.<name>.roots`, pointing at a service implementing the SDK's
+`Mcp\Client\Handler\Request\RootsCallbackInterface`, and derives the advertised
+capability from it exactly as `sampling` and `elicitation` already do.
+
+[BC BREAK] `capabilities.roots` is removed. Advertising the capability without a
+handler behind it was never useful; `roots: 'App\...'` replaces it.
+
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
 index 3f140a1b..70de18bb 100644
 --- a/src/mcp-bundle/config/options.php
@@ -21,11 +35,19 @@ index 3f140a1b..70de18bb 100644
                          ->stringNode('sampling')
                              ->info('Service id implementing Mcp\Client\Handler\Request\SamplingCallbackInterface. Enables the "sampling" capability.')
                              ->defaultNull()
+
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..e6894101 100644
+index f6136243..343b4e3c 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -21,6 +21,7 @@ use Mcp\Client as McpSdkClient;
+@@ -15,12 +15,14 @@ use Mcp\Capability\Attribute\McpPrompt;
+ use Mcp\Capability\Attribute\McpResource;
+ use Mcp\Capability\Attribute\McpResourceTemplate;
+ use Mcp\Capability\Attribute\McpTool;
++use Mcp\Capability\Completion\ProviderInterface as CompletionProviderInterface;
+ use Mcp\Capability\Registry;
+ use Mcp\Capability\Registry\Loader\LoaderInterface;
+ use Mcp\Client as McpSdkClient;
  use Mcp\Client\Builder as McpSdkClientBuilder;
  use Mcp\Client\Handler\Notification\LoggingNotificationHandler;
  use Mcp\Client\Handler\Request\ElicitationRequestHandler;
@@ -33,7 +55,7 @@ index f6136243..e6894101 100644
  use Mcp\Client\Handler\Request\SamplingRequestHandler;
  use Mcp\Client\Transport\HttpTransport;
  use Mcp\Client\Transport\StdioTransport;
-@@ -231,9 +232,9 @@ final class McpBundle extends AbstractBundle
+@@ -231,9 +243,9 @@ final class McpBundle extends AbstractBundle
                  $client['client_info']['description'],
              ])
              ->addMethodCall('setCapabilities', [new Definition(ClientCapabilities::class, [
@@ -45,7 +67,7 @@ index f6136243..e6894101 100644
                  null !== $client['sampling'],
                  null !== $client['elicitation'],
              ])])
-@@ -251,6 +252,12 @@ final class McpBundle extends AbstractBundle
+@@ -251,6 +263,12 @@ final class McpBundle extends AbstractBundle
              ]);
          }
  
@@ -58,3 +80,59 @@ index f6136243..e6894101 100644
          if (null !== $client['sampling']) {
              $definition->addMethodCall('addRequestHandler', [
                  new Definition(SamplingRequestHandler::class, [new Reference($client['sampling']), $logger]),
+
+diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
+index b1c1f123..bb8d7865 100644
+--- a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
++++ b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
+@@ -12,6 +12,7 @@
+ namespace Symfony\AI\McpBundle\Tests\DependencyInjection;
+ 
+ use Mcp\Client as McpSdkClient;
++use Mcp\Client\Handler\Request\ListRootsRequestHandler;
+ use Mcp\Client\Transport\HttpTransport;
+ use Mcp\Client\Transport\StdioTransport;
+ use Mcp\Schema\ClientCapabilities;
+@@ -160,9 +161,9 @@ final class McpBundleClientTest extends TestCase
+         $container = $this->buildContainer($this->config([
+             'plain' => ['servers' => ['github' => ['transport' => 'http', 'url' => 'https://example.com/mcp']]],
+             'rich' => [
++                'roots' => 'app.roots',
+                 'sampling' => 'app.sampling',
+                 'elicitation' => 'app.elicitation',
+-                'capabilities' => ['roots' => true],
+                 'servers' => ['github' => ['transport' => 'http', 'url' => 'https://example.com/mcp']],
+             ],
+         ]));
+@@ -175,7 +176,30 @@ final class McpBundleClientTest extends TestCase
+ 
+         $rich = $this->callsNamed($container, 'rich', 'github', 'setCapabilities')[0][1][0];
+         $this->assertSame([true, false, true, true], $rich->getArguments());
+-        $this->assertCount(2, $this->callsNamed($container, 'rich', 'github', 'addRequestHandler'));
++        $this->assertCount(3, $this->callsNamed($container, 'rich', 'github', 'addRequestHandler'));
++    }
++
++    public function testTheRootsHandlerIsRegisteredWithTheConfiguredService()
++    {
++        $container = $this->buildContainer($this->config([
++            'research' => [
++                'roots' => 'app.roots',
++                'servers' => ['github' => ['transport' => 'http', 'url' => 'https://example.com/mcp']],
++            ],
++        ]));
++
++        $handlers = $this->callsNamed($container, 'research', 'github', 'addRequestHandler');
++        $this->assertCount(1, $handlers);
++
++        $handler = $handlers[0][1][0];
++        $this->assertInstanceOf(Definition::class, $handler);
++        $this->assertSame(ListRootsRequestHandler::class, $handler->getClass());
++        $this->assertSame('app.roots', (string) $handler->getArgument(0));
++
++        // The capability is advertised because a handler backs it, not because
++        // a boolean said so.
++        $capabilities = $this->callsNamed($container, 'research', 'github', 'setCapabilities')[0][1][0];
++        $this->assertSame([true, false, false, false], $capabilities->getArguments());
+     }
+ 
+     public function testServerLogsAreForwardedByDefault()

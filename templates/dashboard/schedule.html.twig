@@ -1,0 +1,66 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Schedule — {{ conference.title }}{% endblock %}
+
+{% block body %}
+    <h1>Schedule</h1>
+    <p class="lede">
+        The same data the <code>schedule://{day}</code> resource template serves as Markdown, and the
+        <code>ui://schedule</code> MCP App renders inside a host's iframe.
+    </p>
+
+    <p>
+        {% for candidate in days %}
+            <a href="{{ path('schedule', {day: candidate}) }}"
+               class="chip {{ candidate == day ? '' : 'plain' }}"
+               style="text-decoration:none">{{ candidate|date('D j M') }}</a>
+        {% endfor %}
+    </p>
+
+    <div class="panel scroll">
+        {% if slots is empty %}
+            <p class="muted">Nothing scheduled on this day.</p>
+        {% else %}
+            <table>
+                <thead>
+                <tr><th>Time</th><th>Room</th><th>Talk</th><th>Speaker</th><th>Track</th></tr>
+                </thead>
+                <tbody>
+                {% for slot in slots %}
+                    <tr>
+                        <td class="time">{{ slot.starts_at }}–{{ slot.ends_at }}</td>
+                        <td>{{ slot.room }} <span class="muted">({{ slot.capacity }})</span></td>
+                        <td>
+                            {{ slot.talk.title }}
+                            <div class="muted mono" style="font-size:12px">talk://{{ slot.talk.slug }}</div>
+                        </td>
+                        <td>{{ slot.talk.speaker }}</td>
+                        <td><span class="chip plain">{{ slot.talk.track }}</span> <span class="chip plain">{{ slot.talk.level }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+
+    <h2>Waiting for a slot</h2>
+    <p class="lede">
+        What <code>list_unscheduled_talks</code> returns, and what <code>schedule_talk</code> on the
+        organizer server is for.
+    </p>
+    <div class="panel">
+        {% if unscheduled is empty %}
+            <p class="muted" style="margin:0">Everything is scheduled.</p>
+        {% else %}
+            <ul class="plain">
+                {% for talk in unscheduled %}
+                    <li>
+                        {{ talk.title }}
+                        <span class="muted">— {{ talk.speaker.name }}, {{ talk.durationMinutes }} min</span>
+                        <span class="chip plain">{{ talk.track.value }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

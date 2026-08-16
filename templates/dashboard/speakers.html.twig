@@ -1,0 +1,33 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Speakers — {{ conference.title }}{% endblock %}
+
+{% block body %}
+    <h1>Speakers</h1>
+    <p class="lede">
+        The same records the <code>speaker://{slug}</code> resource template serves, and the same list
+        that backs argument completion for every prompt and tool taking a speaker.
+    </p>
+
+    <div class="grid cols-2">
+        {% for speaker in speakers %}
+            <div class="panel">
+                <h3>{{ speaker.name }}
+                    {% if speaker.country %}<span class="chip plain">{{ speaker.country }}</span>{% endif %}
+                </h3>
+                <p class="muted" style="font-size:13px;margin:0 0 10px">
+                    {{ speaker.company ?: 'Independent' }}{% if speaker.mastodon %} · {{ speaker.mastodon }}{% endif %}
+                </p>
+                <p style="font-size:14px;margin:0 0 12px">{{ speaker.bio }}</p>
+                <ul class="plain" style="font-size:13px">
+                    {% for talk in speaker.talks %}
+                        <li>{{ talk.title }} <span class="muted mono" style="font-size:12px">talk://{{ talk.slug }}</span></li>
+                    {% else %}
+                        <li class="muted">No talks yet.</li>
+                    {% endfor %}
+                </ul>
+                <p class="muted mono" style="font-size:12px;margin:10px 0 0">{{ speaker.uri }}</p>
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}

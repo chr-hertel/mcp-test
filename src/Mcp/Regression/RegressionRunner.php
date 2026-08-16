@@ -631,6 +631,29 @@ final class RegressionRunner
             });
         }
 
+        if ($this->hasTool('import_proposals_from_roots')) {
+            $this->check('client capabilities', 'the server reads files from a client root', function () use ($connection): string {
+                $data = $this->structured($connection->callTool('import_proposals_from_roots'));
+
+                if ('ok' !== ($data['status'] ?? null)) {
+                    return 'skipped by the server: '.($data['message'] ?? 'no reason given');
+                }
+
+                if (0 === $data['scanned']) {
+                    throw new \RuntimeException('No *.proposal.md file was found in any advertised root; is workspace/ empty?');
+                }
+
+                // Idempotent: a second pass must import nothing and skip everything.
+                $again = $this->structured($connection->callTool('import_proposals_from_roots'));
+
+                if ([] !== $again['imported']) {
+                    throw new \RuntimeException('Re-running the import created duplicates.');
+                }
+
+                return \sprintf('%d file(s) scanned, %d imported, re-run imported nothing', $data['scanned'], \count($data['imported']));
+            });
+        }
+
         if ($this->hasTool('submit_proposal')) {
             $this->check('client capabilities', 'elicitation round trip', function () use ($connection): string {
                 $this->elicitation->reset();

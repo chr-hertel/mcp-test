@@ -1,3 +1,16 @@
+symfony/mcp-bundle: complete the ServerConnection request surface
+
+`ServerConnectionInterface` forwards the SDK client's requests, but three were
+missing, so an application using the bundle could not reach them at all without
+dropping down to the raw `Mcp\Client`:
+
+  * `complete()` — argument completion (`completion/complete`), which is the
+    whole point of `#[CompletionProvider]` on the server side;
+  * `getProtocolVersion()` — which revision was negotiated;
+  * `sendRootsListChanged()` — telling a server the client's roots moved.
+
+Adds all three, wrapped in the same error translation as the rest.
+
 diff --git a/src/mcp-bundle/src/Client/ServerConnection.php b/src/mcp-bundle/src/Client/ServerConnection.php
 index 3aaf4dd0..2bd73164 100644
 --- a/src/mcp-bundle/src/Client/ServerConnection.php
@@ -51,6 +64,7 @@ index 3aaf4dd0..2bd73164 100644
      /**
       * @template T of ListToolsResult|ListResourcesResult|ListResourceTemplatesResult|ListPromptsResult
       *
+
 diff --git a/src/mcp-bundle/src/Client/ServerConnectionInterface.php b/src/mcp-bundle/src/Client/ServerConnectionInterface.php
 index 47fd6ae5..769cb975 100644
 --- a/src/mcp-bundle/src/Client/ServerConnectionInterface.php

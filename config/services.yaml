@@ -26,6 +26,14 @@ services:
             $projectDir: '%kernel.project_dir%'
             $workspaceDir: '%app.workspace_dir%'
 
+    # The bundle's per-server locators are not autowirable by type (two of them
+    # share ServiceProviderInterface), so the dashboard names them explicitly.
+    App\Controller\DashboardController:
+        arguments:
+            $builders: '@mcp.server_locator.builder'
+            $registries: '@mcp.server_locator.registry'
+        tags: ['controller.service_arguments']
+
     App\Command\SeedCommand:
         arguments:
             $environment: '%kernel.environment%'

@@ -99,9 +99,12 @@ class TalkRepository extends ServiceEntityRepository
      */
     public function findUnscheduled(): array
     {
+        // "t.slot IS NULL" would be a path expression on the inverse side of the
+        // association, which DQL does not allow; the join has to be explicit.
         return $this->createQueryBuilder('t')
             ->join('t.speaker', 's')->addSelect('s')
-            ->where('t.slot IS NULL')
+            ->leftJoin('t.slot', 'sl')
+            ->where('sl.id IS NULL')
             ->andWhere('t.status = :status')
             ->setParameter('status', TalkStatus::Accepted)
             ->orderBy('t.title', 'ASC')
