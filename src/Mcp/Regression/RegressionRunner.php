@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Regression;
 
-use App\DataFixtures\ConferenceFixtures;
+use App\Service\ProgrammeSeeder;
 use App\Mcp\Client\ScriptedElicitationHandler;
 use App\Mcp\Client\ScriptedSamplingHandler;
 use Mcp\Schema\Content\BlobResourceContents;
@@ -300,7 +300,7 @@ final class RegressionRunner
         });
 
         $this->check('prompts', 'prompt carrying an embedded resource', function () use ($connection): string {
-            $result = $connection->getPrompt('review_schedule_day', ['day' => ConferenceFixtures::DAY_ONE]);
+            $result = $connection->getPrompt('review_schedule_day', ['day' => ProgrammeSeeder::DAY_ONE]);
 
             foreach ($result->messages as $message) {
                 if ($message->content instanceof EmbeddedResource) {
@@ -738,7 +738,7 @@ final class RegressionRunner
         });
 
         $this->check('apps', 'the app tool renders HTML on the server', function () use ($connection): string {
-            $data = $this->structured($connection->callTool('browse_schedule', ['day' => ConferenceFixtures::DAY_ONE]));
+            $data = $this->structured($connection->callTool('browse_schedule', ['day' => ProgrammeSeeder::DAY_ONE]));
 
             if (!isset($data['html']) || !\is_string($data['html'])) {
                 throw new \RuntimeException('The tool result carries no "html" field.');

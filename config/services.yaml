@@ -26,7 +26,13 @@ services:
             $projectDir: '%kernel.project_dir%'
             $workspaceDir: '%app.workspace_dir%'
 
-    App\Mcp\Tool\Organizer\WorkspaceTool: ~
+    App\Command\SeedCommand:
+        arguments:
+            $environment: '%kernel.environment%'
+
+    App\Command\ClaudeDesktopConfigCommand:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
 
     # The scripted elicitation handler is stateful: a test scripts an answer and
     # then reads back what was asked. Resetting it on kernel.reset keeps that
