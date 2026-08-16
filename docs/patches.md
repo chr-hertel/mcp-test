@@ -152,6 +152,46 @@ sentence is wrong — a documentation fix rather than a patch.
 Anything that must not be reachable by a model needs a separate server (as
 `organizer` is here), not a visibility hint.
 
+### A `LoaderInterface` bypasses every server's capability lists
+
+Services implementing `Mcp\Capability\Registry\Loader\LoaderInterface` are
+autoconfigured with `mcp.loader` and handed to **every** server builder:
+
+```php
+->addMethodCall('addLoaders', [new TaggedIteratorArgument('mcp.loader')])
+```
+
+Attributed elements go through `ElementMatcher` and appear only on the servers
+whose `tools:` / `resources:` / … lists name them. Loader-registered elements go
+through nothing. So this configuration —
+
+```yaml
+diagnostics:
+    tools: ['App\Mcp\Tool\Diagnostics\']
+    # resources: not listed, so: none
+```
+
+— serves two resources anyway, because
+[`HouseKeepingLoader`](../src/Mcp/Loader/HouseKeepingLoader.php) registered them.
+The regression suite found this the moment the loader was added: the
+`diagnostics` server started answering `resources/list` with entries its own
+configuration never mentions.
+
+For read-only housekeeping resources that is harmless. For a loader that reads a
+database table, or one shipped by a third-party bundle, it means an element can
+reach a server the application deliberately kept narrow — including one on the
+other side of a firewall. The whole point of the capability lists is that a
+server exposes only what it names.
+
+Not patched here, because the fix is an API decision rather than a bug fix: it
+needs either a `loaders:` capability list per server (matching by service id,
+symmetrical with the other five), or loaders filtered by the same
+`ElementMatcher` after they run. Both are reasonable; picking one is the
+maintainer's call.
+
+Until then, treat a loader as global, and put anything server-specific behind an
+attribute.
+
 ### The bundle exposes about half of the SDK's server builder
 
 `Mcp\Server\Builder` grew a lot on the `2026spec-findings` branch. The bundle

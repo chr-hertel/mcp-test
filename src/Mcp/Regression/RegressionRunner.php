@@ -365,8 +365,10 @@ final class RegressionRunner
             return \sprintf('%d resource(s)', \count($resources));
         });
 
-        if ([] === $resources) {
-            $this->results[] = CheckResult::skip('resources', 'resources/read', 'this server exposes no resources');
+        $uris = array_map(static fn ($resource): string => $resource->uri, $resources);
+
+        if (!\in_array('conference://current', $uris, true)) {
+            $this->results[] = CheckResult::skip('resources', 'resources/read', 'this server exposes no conference resources');
         } else {
             $this->check('resources', 'resources/read (JSON)', function () use ($connection): string {
                 $result = $connection->readResource('conference://current');
@@ -401,14 +403,12 @@ final class RegressionRunner
 
                 return \sprintf('%d bytes of image/png', \strlen($decoded));
             });
+        }
 
-            $this->check('resources', 'a resource registered at runtime by a loader', function () use ($connection, $resources): string {
-                $uris = array_map(static fn ($resource): string => $resource->uri, $resources);
-
-                if (!\in_array('info://day/1', $uris, true)) {
-                    return 'skipped: this server exposes no loader-registered resources';
-                }
-
+        if (!\in_array('info://day/1', $uris, true)) {
+            $this->results[] = CheckResult::skip('resources', 'a resource registered at runtime by a loader', 'this server exposes no loader-registered resources');
+        } else {
+            $this->check('resources', 'a resource registered at runtime by a loader', function () use ($connection): string {
                 $result = $connection->readResource('info://day/1');
                 $contents = $result->contents[0] ?? null;
 
@@ -418,17 +418,17 @@ final class RegressionRunner
 
                 return \sprintf('%d byte(s) of %s', \strlen($contents->text), $contents->mimeType ?? 'no MIME type');
             });
-
-            $this->check('resources', 'unknown URI is refused', function () use ($connection): string {
-                try {
-                    $connection->readResource('conference://nope');
-                } catch (McpBundleException $e) {
-                    return 'refused: '.$this->firstLine($e->getMessage());
-                }
-
-                throw new \RuntimeException('An unknown resource URI was accepted.');
-            });
         }
+
+        $this->check('resources', 'unknown URI is refused', function () use ($connection): string {
+            try {
+                $connection->readResource('nope://nothing/here');
+            } catch (McpBundleException $e) {
+                return 'refused: '.$this->firstLine($e->getMessage());
+            }
+
+            throw new \RuntimeException('An unknown resource URI was accepted.');
+        });
 
         $templates = [];
 

@@ -24,8 +24,11 @@ use Mcp\Schema\ToolAnnotations;
  * server is built, on every process. Anything expensive belongs behind a cache;
  * this one is two queries.
  *
- * Registered on every configured server, since a loader has no capability list
- * to filter it — that asymmetry with attributes is worth knowing about.
+ * Registered on every configured server: a loader has no capability list, so
+ * unlike an attributed element it cannot be scoped to one server. That
+ * asymmetry is written up in docs/patches.md — it is the reason the
+ * `diagnostics` server answers `resources/list` with entries its own
+ * configuration never mentions.
  */
 final class HouseKeepingLoader implements LoaderInterface
 {
