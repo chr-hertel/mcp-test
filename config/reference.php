@@ -978,6 +978,30 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             path?: string|Param, // HTTP endpoint path. Defaults to "/mcp/<name>". // Default: null
  *             allowed_hosts?: mixed, // DNS rebinding protection hosts (without port). Leave unset to keep the SDK default (localhost only), set an array of hostnames to expose a public MCP server, or false to disable the protection entirely. // Default: null
  *         },
+ *         lifecycle?: "handshake"|"stateless"|Param, // "handshake" is the 2025-11-25-and-earlier lifecycle (initialize, sessions, StreamableHttpTransport). "stateless" is 2026-07-28: no handshake, no session, every request self-describing. // Default: "handshake"
+ *         protocol_versions?: Param|string|list<"2024-11-05"|"2025-03-26"|"2025-06-18"|"2025-11-25"|"2026-07-28"|Param>,
+ *         request_state?: array{ // Signs the state a multi-round-trip answer carries through the client. Required for any "stateless" server whose handlers return an InputRequiredResult.
+ *             key?: string|Param, // HMAC key. The same value must reach every process that might serve the retry. // Default: null
+ *             ttl?: int|Param, // Seconds a minted state stays valid. // Default: 600
+ *         },
+ *         cache?: array{ // Cache hints a "stateless" server puts on its answers. The spec requires them on server/discover, the list methods and resources/read.
+ *             ttl_ms?: int|Param, // Default freshness in milliseconds. 0 refuses caching. // Default: 0
+ *             scope?: "private"|"public"|Param, // Default: "private"
+ *             methods?: array<string, array{ // Default: []
+ *                 ttl_ms?: int|Param,
+ *                 scope?: "private"|"public"|Param, // Default: "private"
+ *             }>,
+ *         },
+ *         subscriptions?: array{ // Delivery for "subscriptions/listen" streams, which replace the HTTP GET stream in 2026-07-28.
+ *             bus?: "none"|"memory"|"cache"|Param, // Default: "none"
+ *             cache_pool?: string|Param, // PSR-16 service for the "cache" bus. Under PHP-FPM the publisher and the stream are different workers, so "memory" cannot reach them. // Default: "cache.mcp.notifications"
+ *             lifetime?: float|Param, // Seconds a stream is held before the server closes it gracefully. 0 means until the client or the runtime ends it. // Default: 30.0
+ *         },
+ *         tasks?: array{ // The tasks extension (SEP-2663): a durable handle instead of a held-open connection.
+ *             store?: "none"|"memory"|"cache"|Param, // Default: "none"
+ *             cache_pool?: string|Param, // PSR-16 service for the "cache" store. The worker that creates a task is not the one polled for it, so "memory" only works in a single-process runtime. // Default: "cache.mcp.tasks"
+ *             input_handler?: string|Param, // Service id implementing Mcp\Server\Task\TaskInputHandlerInterface, for answering a parked task. // Default: null
+ *         },
  *         session?: array{ // Session storage. Every server needs its own store: session ids are not namespaced by server, so a shared store makes a session minted on one server valid on the others.
  *             store?: "file"|"memory"|"cache"|"framework"|Param, // Default: "file"
  *             directory?: string|Param, // Directory for the "file" store. Defaults to "%kernel.cache_dir%/mcp-sessions/<name>". // Default: null

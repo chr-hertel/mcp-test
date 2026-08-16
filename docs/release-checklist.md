@@ -12,6 +12,7 @@ app looks like, and whether a human can follow the instructions.
 |---|---|---|
 | 0–2 · reset, automated gates, console | nothing | ~5 min |
 | 3 · Inspector CLI | Node | ~2 min |
+| 3b · protocol revision 2026-07-28 | — | ~2 min |
 | 4 · Inspector UI | Node, a browser | ~10 min |
 | 5 · Claude Desktop | the desktop app | ~15 min |
 | 6 · browser | — | ~2 min |
@@ -42,7 +43,7 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **26 tests / 122 assertions OK**, then the STDIO regression:
+- [ ] `make check` → **42 tests / 172 assertions OK**, then the STDIO regression:
       `conference_stdio 35 passed`, `organizer_stdio 40 passed`, **0 failed**
 - [ ] `make serve` — then `make regression` → all five connections, **0 failed**
 
@@ -53,8 +54,9 @@ Nothing below this line is worth doing if these are red.
   | `diagnostics_http` | 18 | 7 |
   | `conference_stdio` | 35 | 1 |
   | `organizer_stdio` | 40 | 1 |
+  | `modern_http` | 22 | 0 |
 
-- [ ] `make upstream-test` → `mcp/sdk` **1421 tests OK**, `symfony/mcp-bundle` **166 tests OK**
+- [ ] `make upstream-test` → `mcp/sdk` **1422 tests OK**, `symfony/mcp-bundle` **174 tests OK**
 
   These run the *upstream* suites against the patched clones. A failure here
   means a patch broke something, not that the demo did.
@@ -92,6 +94,7 @@ What someone sees before they connect anything.
   | `conference` | 9 | 4 | 7 | 4 |
   | `organizer` | 16 | 4 | 7 | 4 |
   | `diagnostics` | 6 | — | 2 | — |
+  | `modern` | 11 | 4 | 6 | 4 |
 
   and **no** *Not exposed by any server* section. If one appears, a class
   carries an MCP attribute that no capability list matches — usually a typo in a
@@ -123,6 +126,41 @@ The reference client, which knows nothing about this application.
 - [ ] `make inspector-cli SERVER=diagnostics ARGS='--method tools/call --tool-name probe_client'`
       — `roots=true`, everything else `false`. That is the CLI being
       non-interactive, not a bug.
+
+---
+
+## 3b. Protocol revision 2026-07-28
+
+The reason the SDK branch exists. `make serve` first.
+
+- [ ] `make regression-2026` → **22 passed, 0 failed**, across eight groups:
+      discovery, lifecycle, caching, notifications, MRTR, tasks, headers, removals
+
+- [ ] `server/discover` answers without a handshake, and advertises the tasks
+      extension:
+
+  ```console
+  $ curl -sS http://127.0.0.1:8099/mcp/2026 \
+      -H 'Content-Type: application/json' -H 'Accept: application/json' \
+      -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: server/discover' \
+      -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}}}}' | head -c 400
+  ```
+
+  Expected: `supportedVersions: ["2026-07-28"]`, `ttlMs: 3600000`,
+  `cacheScope: "public"`, and `io.modelcontextprotocol/tasks` under `extensions`.
+
+- [ ] No `Mcp-Session-Id` comes back from any call to `/mcp/2026`
+- [ ] The same tool, both eras: `submit_proposal` on `/mcp/organizer` blocks on an
+      elicitation, and on `/mcp/2026` returns `resultType: "input_required"` with a
+      signed `requestState`. Same feature, opposite direction.
+- [ ] A `GET` or `DELETE` on `/mcp/2026` answers **405** — there is no session to
+      open a stream on, and none to tear down.
+
+> The MCP Inspector speaks the handshake era, so it cannot drive this endpoint.
+> That is not a demo problem: no released client speaks 2026-07-28 yet, which is
+> why the demo carries its own — see `src/Mcp/Modern/ModernClient.php`.
 
 ---
 

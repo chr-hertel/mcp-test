@@ -1,0 +1,132 @@
+mcp/sdk: honour a complete schema definition on a parameter
+
+`#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
+takes precedence over individual properties", and at the *method* level
+`SchemaGenerator` unwraps it exactly so. At the *parameter* level it did not: the
+attribute's `toArray()` was merged into the inferred schema as an ordinary key,
+so the property came out as
+
+```json
+"track": {
+    "type": "string",
+    "default": "backend",
+    "definition": { "type": "string", "x-mcp-header": "Track" }
+}
+```
+
+A nested `definition` member is not JSON Schema. No client reads it, and
+everything it holds is silently lost.
+
+That matters more than it looks on the 2026-07-28 branch, because `x-mcp-header`
+— the annotation that mirrors an argument into `Mcp-Param-*` so an intermediary
+can route without parsing the body — has no representation on the `Schema`
+attribute other than `definition`. Nesting it means the server never learns the
+argument is header-mirrored, so it never validates the two against each other,
+and the `-32020` the revision requires on a mismatch is never emitted.
+
+The fix mirrors the method-level path: a `definition` replaces the property
+schema. The inferred `default` is kept when the definition does not state one,
+since that comes from the signature rather than from the schema.
+
+Found by the demo's 2026-07-28 regression suite, whose "a header that disagrees
+with the body is refused" check passed a contradictory `Mcp-Param-Track` and was
+answered normally.
+
+diff --git a/src/Capability/Discovery/SchemaGenerator.php b/src/Capability/Discovery/SchemaGenerator.php
+index 3975a6a..9f745b4 100644
+--- a/src/Capability/Discovery/SchemaGenerator.php
++++ b/src/Capability/Discovery/SchemaGenerator.php
+@@ -237,7 +237,25 @@ final class SchemaGenerator implements SchemaGeneratorInterface
+         // Parameter-level takes highest precedence
+         $parameterLevelSchema = $paramInfo['parameter_schema'];
+         if (!empty($parameterLevelSchema)) {
+-            $mergedSchema = array_merge($mergedSchema, $parameterLevelSchema);
++            // A `definition` *is* the schema — the attribute documents it as taking
++            // precedence over the individual keywords, and the method-level path
++            // already unwraps it the same way. Merging it as an ordinary key would
++            // instead emit a property with a literal "definition" member, which no
++            // client reads and which silently drops whatever it holds — including
++            // `x-mcp-header`, the only way to express header mirroring from an
++            // attribute.
++            if (isset($parameterLevelSchema['definition']) && \is_array($parameterLevelSchema['definition'])) {
++                $mergedSchema = $parameterLevelSchema['definition'];
++
++                // The inferred default is still worth keeping: it comes from the
++                // signature, not from the schema, so a definition that does not
++                // mention it is not overriding it.
++                if (!\array_key_exists('default', $mergedSchema) && \array_key_exists('default', $inferredSchema)) {
++                    $mergedSchema['default'] = $inferredSchema['default'];
++                }
++            } else {
++                $mergedSchema = array_merge($mergedSchema, $parameterLevelSchema);
++            }
+         }
+ 
+         // Run after all merges so that when a Schema attribute reshapes the parameter
+diff --git a/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php b/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
+index d695917..2e837bd 100644
+--- a/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
++++ b/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
+@@ -63,6 +63,25 @@ class SchemaGeneratorFixture
+     /**
+      * Method-level Schema with complete definition.
+      */
++    /**
++     * A parameter-level complete definition, which replaces the inferred schema
++     * rather than being merged into it as a key.
++     *
++     * `x-mcp-header` can only be expressed this way, so a definition that ends up
++     * nested takes the header annotation down with it.
++     */
++    public function parameterLevelCompleteDefinition(
++        #[Schema(definition: [
++            'type' => 'string',
++            'description' => 'The region to query.',
++            'x-mcp-header' => 'Region',
++        ])]
++        string $region = 'eu',
++        #[Schema(definition: ['type' => 'integer', 'minimum' => 1, 'maximum' => 10])]
++        int $limit = 3,
++    ): void {
++    }
++
+     #[Schema(definition: [
+         'type' => 'object',
+         'description' => 'Creates a custom filter with complete definition',
+diff --git a/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php b/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
+index 0c223cb..b0b943e 100644
+--- a/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
++++ b/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
+@@ -92,6 +92,32 @@ final class SchemaGeneratorTest extends TestCase
+         ], $schema);
+     }
+ 
++    public function testUsesCompleteSchemaDefinitionFromParameterLevelSchemaAttribute(): void
++    {
++        $method = new \ReflectionMethod(SchemaGeneratorFixture::class, 'parameterLevelCompleteDefinition');
++        $schema = $this->schemaGenerator->generate($method);
++
++        // The definition replaces the inferred property schema. Merged as an
++        // ordinary key it would emit a "definition" member no client reads —
++        // and would drop `x-mcp-header`, which nothing else can express.
++        $this->assertEquals([
++            'type' => 'string',
++            'description' => 'The region to query.',
++            'x-mcp-header' => 'Region',
++            'default' => 'eu',
++        ], $schema['properties']['region']);
++
++        $this->assertEquals([
++            'type' => 'integer',
++            'minimum' => 1,
++            'maximum' => 10,
++            'default' => 3,
++        ], $schema['properties']['limit']);
++
++        // Both have defaults, so an empty "required" is dropped entirely.
++        $this->assertArrayNotHasKey('required', $schema);
++    }
++
+     public function testGeneratesSchemaFromMethodLevelSchemaAttributeWithProperties(): void
+     {
+         $method = new \ReflectionMethod(SchemaGeneratorFixture::class, 'methodLevelWithProperties');

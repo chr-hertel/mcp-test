@@ -176,6 +176,10 @@ regression: ## Run the regression suite against every connection (needs `make se
 regression-stdio: ## Run the regression suite over STDIO only (no web server needed)
 	$(CONSOLE) app:mcp:regression --transport=stdio
 
+.PHONY: regression-2026
+regression-2026: ## Run the 2026-07-28 checks only (needs `make serve`)
+	$(CONSOLE) app:mcp:regression modern
+
 .PHONY: check
 check: test regression-stdio ## Everything that runs without a web server
 

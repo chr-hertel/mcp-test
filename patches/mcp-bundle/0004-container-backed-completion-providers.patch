@@ -47,10 +47,10 @@ index b32f8568..4def5c9e 100644
              }
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..343b4e3c 100644
+index f6136243..b537965e 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -15,13 +15,14 @@ use Mcp\Capability\Attribute\McpPrompt;
+@@ -15,18 +15,19 @@ use Mcp\Capability\Attribute\McpPrompt;
  use Mcp\Capability\Attribute\McpResource;
  use Mcp\Capability\Attribute\McpResourceTemplate;
  use Mcp\Capability\Attribute\McpTool;
@@ -65,7 +65,12 @@ index f6136243..343b4e3c 100644
  use Mcp\Client\Handler\Request\SamplingRequestHandler;
  use Mcp\Client\Transport\HttpTransport;
  use Mcp\Client\Transport\StdioTransport;
-@@ -93,6 +95,12 @@ final class McpBundle extends AbstractBundle
+ use Mcp\Schema\ClientCapabilities;
+ use Mcp\Schema\Enum\ProtocolVersion;
+ use Mcp\Schema\Icon;
+ use Mcp\Server;
+ use Mcp\Server\Builder;
+@@ -93,6 +104,12 @@ final class McpBundle extends AbstractBundle
          $builder->registerForAutoconfiguration(LoaderInterface::class)
              ->addTag('mcp.loader');
  

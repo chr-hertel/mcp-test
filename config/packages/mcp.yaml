@@ -103,6 +103,69 @@ mcp:
             tools:
                 - 'App\Mcp\Tool\Diagnostics\'
 
+        # The 2026-07-28 lifecycle. No initialize, no session, no server-initiated
+        # requests — every request carries its own protocol version and client
+        # capabilities, so any worker can answer any request.
+        #
+        # It is a separate server rather than a flag on an existing one because
+        # the two lifecycles are different endpoints by design: a client detects
+        # which it is talking to, and one server definition can be mounted twice.
+        modern:
+            name: 'symfonycon-2026'
+            version: '1.0.0'
+            description: 'The conference programme over protocol revision 2026-07-28.'
+            instructions: |
+                The same programme as the "conference" server, over the 2026-07-28 lifecycle.
+
+                There are no server-initiated requests here: `submit_proposal` returns the
+                question it needs answered and you call it again with the answer attached.
+                `audit_schedule` hands back a task handle rather than holding the connection
+                open. `describe_request` reports what your own request declared.
+            lifecycle: stateless
+            protocol_versions: ['2026-07-28']
+            transports:
+                stdio: false      # the revision is defined over HTTP; the config refuses stdio
+                http: true
+            http:
+                path: /mcp/2026
+
+            # Signs what a multi-round-trip answer carries through the client. The
+            # same key must reach every process that might serve the retry, so a
+            # per-process random value only works single-process.
+            request_state:
+                key: '%env(MCP_REQUEST_STATE_KEY)%'
+                ttl: 600
+
+            # The revision requires ttlMs/cacheScope on server/discover, the list
+            # methods and resources/read. The default of 0/private is conformant
+            # and refuses all caching; these say what we actually mean.
+            cache:
+                ttl_ms: 30000
+                scope: private
+                methods:
+                    'server/discover': { ttl_ms: 3600000, scope: public }
+                    'tools/list': { ttl_ms: 3600000, scope: public }
+                    'prompts/list': { ttl_ms: 3600000, scope: public }
+
+            # subscriptions/listen replaces the HTTP GET stream. The cache-backed
+            # bus is the one that works under PHP-FPM, where the publisher and the
+            # process holding the stream open are different workers.
+            subscriptions:
+                bus: cache
+                lifetime: 15
+
+            # SEP-2663. Same reasoning for the store: the worker that creates a
+            # task is not the one polled for it.
+            tasks:
+                store: cache
+
+            tools:
+                - 'App\Mcp\Tool\Modern\'
+                - 'App\Mcp\Tool\Programme\'
+            prompts: ['*']
+            resources: ['*']
+            resource_templates: ['*']
+
     # ------------------------------------------------------------------------
     # Clients: the remote MCP servers this application reaches out to.
     #

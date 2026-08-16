@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Mcp\Regression\CheckResult;
+use App\Mcp\Regression\ModernRegressionRunner;
 use App\Mcp\Regression\RegressionRunner;
 use Symfony\AI\McpBundle\Client\McpClientInterface;
 use Symfony\AI\McpBundle\Client\ServerConnectionInterface;
@@ -35,6 +36,8 @@ final class McpRegressionCommand extends Command
         #[Target('regression')]
         private readonly McpClientInterface $client,
         private readonly RegressionRunner $runner,
+        private readonly ModernRegressionRunner $modernRunner,
+        private readonly string $modernEndpoint,
     ) {
         parent::__construct();
     }
@@ -45,6 +48,7 @@ final class McpRegressionCommand extends Command
             ->addArgument('server', InputArgument::OPTIONAL, 'One configured server connection; all of them when omitted.')
             ->addOption('transport', 't', InputOption::VALUE_REQUIRED, 'Only run connections of this transport ("stdio" or "http").')
             ->addOption('quiet-passes', null, InputOption::VALUE_NONE, 'Only print checks that did not pass.')
+            ->addOption('skip-modern', null, InputOption::VALUE_NONE, 'Skip the 2026-07-28 checks, which need the web server.')
             ->setHelp(<<<'HELP'
                 Runs every check against every configured server of the "regression" client:
 
@@ -67,9 +71,9 @@ final class McpRegressionCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $io->title('MCP regression suite');
 
-        $connections = $this->connections($input, $io);
+        $connections = 'modern' === $input->getArgument('server') ? [] : $this->connections($input, $io);
 
-        if ([] === $connections) {
+        if ([] === $connections && !$this->shouldRunModern($input)) {
             $io->warning('No connection matched.');
 
             return Command::INVALID;
@@ -109,6 +113,28 @@ final class McpRegressionCommand extends Command
             ];
         }
 
+        if ($this->shouldRunModern($input)) {
+            $io->section('modern (2026-07-28)');
+
+            // Not a connection of the "regression" client: the SDK's client cannot
+            // speak this revision, so the demo brings its own. See
+            // App\Mcp\Regression\ModernRegressionRunner.
+            $results = $this->modernRunner->run($this->modernEndpoint);
+            $this->render($io, $results, (bool) $input->getOption('quiet-passes'));
+
+            $counts = array_count_values(array_map(static fn (CheckResult $r): string => $r->status, $results));
+            $failedHere = $counts[CheckResult::FAIL] ?? 0;
+            $failed += $failedHere;
+
+            $summary[] = [
+                'modern_http',
+                (string) ($counts[CheckResult::PASS] ?? 0),
+                (string) ($counts[CheckResult::SKIP] ?? 0),
+                (string) $failedHere,
+                $failedHere > 0 ? '<fg=red>fail</>' : '<fg=green>ok</>',
+            ];
+        }
+
         $io->section('Summary');
         $io->table(['Connection', 'Passed', 'Skipped', 'Failed', 'Result'], $summary);
 
@@ -121,6 +147,25 @@ final class McpRegressionCommand extends Command
         $io->success('Every check passed.');
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * The modern endpoint is HTTP-only, so it runs unless the transport filter
+     * excludes HTTP or a single STDIO connection was named.
+     */
+    private function shouldRunModern(InputInterface $input): bool
+    {
+        if ($input->getOption('skip-modern')) {
+            return false;
+        }
+
+        if ('stdio' === $input->getOption('transport')) {
+            return false;
+        }
+
+        $only = $input->getArgument('server');
+
+        return null === $only || 'modern' === $only;
     }
 
     /**

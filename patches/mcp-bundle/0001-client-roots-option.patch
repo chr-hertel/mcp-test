@@ -13,10 +13,10 @@ capability from it exactly as `sampling` and `elicitation` already do.
 handler behind it was never useful; `roots: 'App\...'` replaces it.
 
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
-index 3f140a1b..70de18bb 100644
+index 3f140a1b..321a0a5e 100644
 --- a/src/mcp-bundle/config/options.php
 +++ b/src/mcp-bundle/config/options.php
-@@ -141,13 +141,16 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -141,13 +216,16 @@ return static function (DefinitionConfigurator $configurator): void {
                              ->defaultNull()
                          ->end()
                          ->arrayNode('capabilities')
@@ -37,10 +37,10 @@ index 3f140a1b..70de18bb 100644
                              ->defaultNull()
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..343b4e3c 100644
+index f6136243..b537965e 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -15,12 +15,13 @@ use Mcp\Capability\Attribute\McpPrompt;
+@@ -15,17 +15,18 @@ use Mcp\Capability\Attribute\McpPrompt;
  use Mcp\Capability\Attribute\McpResource;
  use Mcp\Capability\Attribute\McpResourceTemplate;
  use Mcp\Capability\Attribute\McpTool;
@@ -54,7 +54,12 @@ index f6136243..343b4e3c 100644
  use Mcp\Client\Handler\Request\SamplingRequestHandler;
  use Mcp\Client\Transport\HttpTransport;
  use Mcp\Client\Transport\StdioTransport;
-@@ -231,9 +243,9 @@ final class McpBundle extends AbstractBundle
+ use Mcp\Schema\ClientCapabilities;
+ use Mcp\Schema\Enum\ProtocolVersion;
+ use Mcp\Schema\Icon;
+ use Mcp\Server;
+ use Mcp\Server\Builder;
+@@ -231,9 +252,9 @@ final class McpBundle extends AbstractBundle
                  $client['client_info']['description'],
              ])
              ->addMethodCall('setCapabilities', [new Definition(ClientCapabilities::class, [
@@ -66,7 +71,7 @@ index f6136243..343b4e3c 100644
                  null !== $client['sampling'],
                  null !== $client['elicitation'],
              ])])
-@@ -251,6 +263,12 @@ final class McpBundle extends AbstractBundle
+@@ -251,6 +272,12 @@ final class McpBundle extends AbstractBundle
              ]);
          }
  
@@ -79,7 +84,6 @@ index f6136243..343b4e3c 100644
          if (null !== $client['sampling']) {
              $definition->addMethodCall('addRequestHandler', [
                  new Definition(SamplingRequestHandler::class, [new Reference($client['sampling']), $logger]),
-
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
 index 5e4c7fb5..69f290ac 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php

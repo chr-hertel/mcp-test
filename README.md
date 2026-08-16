@@ -61,6 +61,31 @@ $ make serve         # http://127.0.0.1:8099
 | Two clients with different capabilities against the same server | `regression` and `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Driving a server from application code | [`RegressionRunner`](src/Mcp/Regression/RegressionRunner.php) |
 
+### Protocol revision 2026-07-28
+
+The point of the SDK branch, and a different lifecycle rather than a flag: no
+`initialize`, no session, and — the part that reshapes handler code — no
+server-initiated requests.
+
+| Concept | Where |
+|---|---|
+| A stateless server, mounted on `StatelessHttpTransport` | `modern` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| Per-request protocol version, capabilities and trace context | [`ModernLifecycleTool::describeRequest()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| **MRTR** — returning the ask instead of sending it, with signed `requestState` | [`ModernLifecycleTool::submitProposal()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| **Tasks** (SEP-2663) — a durable handle instead of a held connection | [`ModernLifecycleTool::auditSchedule()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| Cache hints (`ttlMs` / `cacheScope`), which the revision requires | `cache:` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| `x-mcp-header` — an argument mirrored into `Mcp-Param-*` and checked | [`ModernLifecycleTool::searchTrack()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| Opt-in progress and logging on the request's own stream | [`ModernLifecycleTool::reindexProgramme()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| A client for the revision, because the SDK has none | [`ModernClient`](src/Mcp/Modern/ModernClient.php) |
+
+Compare `submit_proposal` on the two servers: the handshake-era one calls
+`$gateway->elicit()` and blocks; the modern one returns an `InputRequiredResult`
+and is called twice. Same feature, opposite direction.
+
+```console
+$ make regression-2026     # 22 checks, over real HTTP
+```
+
 ### Both ends of the same round trip
 
 The three server-initiated requests are the hardest part of MCP to see working,
@@ -81,11 +106,12 @@ Every server is built from the same attributed services. Which of them a server
 exposes is configuration, not code — see `tools:`, `prompts:`, `resources:`,
 `resource_templates:` and `apps:` in `config/packages/mcp.yaml`.
 
-| Server | Endpoint | STDIO | Exposes |
-|---|---|---|---|
-| `conference` | `/mcp` | yes | everything read-only, plus the MCP App |
-| `organizer` | `/mcp/organizer` | yes | the above plus scheduling, the CFP inbox and workspace imports |
-| `diagnostics` | `/mcp/diagnostics` | no | protocol probes, progress streams and tools that fail on purpose |
+| Server | Endpoint | Lifecycle | STDIO | Exposes |
+|---|---|---|---|---|
+| `conference` | `/mcp` | handshake | yes | everything read-only, plus the MCP App |
+| `organizer` | `/mcp/organizer` | handshake | yes | the above plus scheduling, the CFP inbox and workspace imports |
+| `diagnostics` | `/mcp/diagnostics` | handshake | no | protocol probes, progress streams and tools that fail on purpose |
+| `modern` | `/mcp/2026` | **stateless** | no | the same programme over protocol revision **2026-07-28** |
 
 `organizer` sits behind a bearer-token firewall over HTTP. Over STDIO it is
 unauthenticated: the process boundary *is* the boundary there, and whoever
@@ -107,7 +133,7 @@ what still works:
 
 ```console
 $ make regression-stdio        # spawns bin/console mcp:server itself; no web server
-$ make serve && make regression # adds the three HTTP connections
+$ make serve && make regression # adds the three HTTP connections and the 2026-07-28 one
 $ php bin/console app:mcp:regression organizer_stdio   # one connection, verbosely
 ```
 
@@ -133,6 +159,7 @@ The same checks run under PHPUnit, alongside three other angles:
 | [`HttpTransportTest`](tests/Functional/HttpTransportTest.php) | raw JSON-RPC: handshake, session ids, error codes, cross-server session replay |
 | [`GeneratedSchemaTest`](tests/Functional/GeneratedSchemaTest.php) | what the SDK makes of a PHP method signature |
 | [`StdioStreamPurityTest`](tests/Functional/StdioStreamPurityTest.php) | that nothing but JSON-RPC reaches stdout, even at `-vvv` |
+| [`ModernLifecycleTest`](tests/Functional/ModernLifecycleTest.php) | protocol revision 2026-07-28: discovery, MRTR, tasks, cache hints, what was removed |
 
 ```console
 $ make test          # 25 tests, no web server, no network
@@ -218,15 +245,6 @@ prints the `mcpServers` fragment with absolute paths, plus what to do before
 connecting. Full walkthrough in [`docs/claude-desktop.md`](docs/claude-desktop.md).
 
 ---
-
-## What is *not* here
-
-Two headline features of the SDK branch are missing, and deliberately so: long-running
-**tasks** (SEP-2663) and **resource subscriptions**. Both need protocol revision
-`2026-07-28`, and `symfony/mcp-bundle` has no way to select a revision or to reach
-`setNotificationBus()` / `setResourceSubscriptionManager()` on the server builder.
-That gap is written up in [`docs/patches.md`](docs/patches.md) rather than worked
-around, because the fix belongs upstream.
 
 ## Documentation
 

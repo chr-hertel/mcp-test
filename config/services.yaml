@@ -34,6 +34,10 @@ services:
             $registries: '@mcp.server_locator.registry'
         tags: ['controller.service_arguments']
 
+    App\Command\McpRegressionCommand:
+        arguments:
+            $modernEndpoint: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
+
     App\Command\SeedCommand:
         arguments:
             $environment: '%kernel.environment%'

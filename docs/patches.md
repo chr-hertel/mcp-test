@@ -1,9 +1,13 @@
 # Upstream findings
 
 Everything in this file was found by building the demo and then pointing its own
-MCP client at its own MCP servers — `make regression`. Four problems needed a
-code change; three more are behaviours worth knowing about but not obviously
-wrong.
+MCP client at its own MCP servers — `make regression`. Six problems needed a code
+change; four more are behaviours worth knowing about but not obviously wrong.
+
+Two of the six only surfaced once the demo actually spoke protocol revision
+2026-07-28, which is what the SDK branch exists for: the bundle could not serve
+that revision at all, and `x-mcp-header` — the annotation the revision adds —
+could not survive schema generation.
 
 The patches live in [`patches/`](../patches) and are applied to the clones under
 `upstream/` by `make apply-patches`. Each one applies cleanly to a pristine
@@ -103,7 +107,62 @@ reach them without reaching past the bundle to the raw client — and the first 
 those is the client-side half of the completion providers the bundle spends
 effort registering on the server side.
 
-### 4. `#[Target('<client>')]` did not resolve
+### 4. The bundle could not serve 2026-07-28 at all
+
+**`patches/mcp-bundle/0005-stateless-lifecycle.patch`**
+
+The whole point of the SDK branch is protocol revision 2026-07-28, and no Symfony
+application could reach it. The bundle built `Builder::build()` onto
+`StreamableHttpTransport` and nothing else; the modern lifecycle needs
+`buildStateless()` onto `StatelessHttpTransport`, and there was no configuration
+that got there.
+
+Four builder calls were unreachable for the same reason — `setRequestState()`
+(without which a multi-round-trip handler cannot remember anything between
+rounds), `setCachePolicy()` (hints the revision *requires* on `server/discover`,
+the list methods and `resources/read`), `setNotificationBus()` and
+`enableExtension(new TasksExtension(...))`.
+
+The patch adds `lifecycle: handshake|stateless` per server plus the configuration
+for those four, a `StatelessMcpController`, and compile-time refusal of the
+combinations the revision forbids — a stateless server with STDIO, or with a
+session store it has no use for.
+
+It depends on SDK surface that only exists on the branch, so it lands after that
+does; the bundle's `"mcp/sdk": "^0.7"` has to move with it. `bin/link-sdk` is how
+the bundle's own suite is run against the branch in the meantime.
+
+### 5. A parameter's complete schema definition was nested instead of applied
+
+**`patches/php-sdk/0001-parameter-level-schema-definition.patch`**
+
+The first patch to the SDK rather than the bundle.
+
+`#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
+takes precedence over individual properties", and at the *method* level
+`SchemaGenerator` unwraps it exactly so. At the *parameter* level it merged the
+attribute as an ordinary key, so the property reached clients as:
+
+```json
+"track": { "type": "string", "default": "backend",
+           "definition": { "type": "string", "x-mcp-header": "Track" } }
+```
+
+A nested `definition` is not JSON Schema. Nothing reads it, and everything inside
+it is lost.
+
+On this branch that is more than cosmetic: `x-mcp-header` — which mirrors an
+argument into `Mcp-Param-*` so an intermediary can route without parsing the body
+— has no representation on the attribute other than `definition`. Nested, the
+server never learns the argument is header-mirrored, never checks the header
+against the body, and never emits the `-32020` the revision requires on a
+mismatch.
+
+Found by the *headers* group of the 2026-07-28 regression suite, whose "a header
+that disagrees with the body is refused" check sent a contradictory
+`Mcp-Param-Track` and got a perfectly normal answer.
+
+### 6. `#[Target('<client>')]` did not resolve
 
 **`patches/mcp-bundle/0003-client-target-alias.patch`**
 
@@ -225,6 +284,30 @@ but because the bundle has no seam to reach them through.
 
 The smallest useful addition would be `mcp.servers.<name>.protocol_version`,
 mirroring the option the client side already has.
+
+### The SDK's client cannot speak 2026-07-28
+
+`Mcp\Client\Protocol::initialize()` falls back to the newest *handshake*
+revision when it is configured with a modern one, and logs a warning:
+
+```php
+if ($offered->isModern()) {
+    $offered = ProtocolVersion::latestHandshake();
+    $this->logger->warning('Configured protocol version cannot be reached through the "initialize" handshake…');
+}
+```
+
+Which is correct — there is no `initialize` in the modern era, so a handshake
+client cannot get there. But the bundle exposes
+`mcp.clients.<name>.protocol_version` with `2026-07-28` among its allowed values,
+so that configuration is accepted and then silently downgraded. Either the enum
+should exclude the modern revisions until the client supports them, or the
+option should fail loudly.
+
+This is why the demo brings its own [`ModernClient`](../src/Mcp/Modern/ModernClient.php)
+rather than driving the modern server through the bundle: there is nothing in
+either library that can. It is about 200 lines, which is itself a reasonable
+argument that the SDK could carry one.
 
 ### `session.store: cache` needs `psr/simple-cache`
 

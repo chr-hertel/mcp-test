@@ -48,11 +48,25 @@ PATCHES = [
     ),
     (
         "0003-client-target-alias.patch",
-        ["registerAliasForArgument"],
+        # Narrow: the *server* alias line matches "registerAliasForArgument" too,
+        # and patch 0005 rewrites the block it sits in.
+        ["McpClientInterface::class, $clientName"],
     ),
     (
         "0004-container-backed-completion-providers.patch",
         ["mcp.completion_provider", "CompletionProviderInterface", "completionProviders"],
+    ),
+    (
+        "0005-stateless-lifecycle.patch",
+        [
+            "lifecycle", "stateless", "Stateless", "buildStateless",
+            "protocol_versions", "request_state", "setRequestState",
+            "CachePolicy", "CacheScope", "cacheScope", "'cache'",
+            "NotificationBus", "notificationBus", "notification_bus",
+            "subscriptions", "setSubscriptionLifetime",
+            "TasksExtension", "TaskStore", "taskStore", "registerPsr16Fallback",
+            "$sessionId", "configureModernLifecycle",
+        ],
     ),
 ]
 
@@ -60,7 +74,8 @@ PATCHES = [
 FILE_OWNER = {
     "src/mcp-bundle/src/Client/ServerConnection.php": "0002-connection-complete-and-protocol-version.patch",
     "src/mcp-bundle/src/Client/ServerConnectionInterface.php": "0002-connection-complete-and-protocol-version.patch",
-    "src/mcp-bundle/config/options.php": "0001-client-roots-option.patch",
+    "src/mcp-bundle/src/Controller/StatelessMcpController.php": "0005-stateless-lifecycle.patch",
+    "src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php": "0005-stateless-lifecycle.patch",
     "src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php": "0001-client-roots-option.patch",
     "src/mcp-bundle/tests/DependencyInjection/McpPassTest.php": "0004-container-backed-completion-providers.patch",
     "src/mcp-bundle/src/DependencyInjection/McpPass.php": "0004-container-backed-completion-providers.patch",
@@ -306,6 +321,11 @@ def verify(bodies: dict[str, str]) -> None:
                 sys.exit(f"  {name} does not apply to a pristine {tip}:\n{result.stderr}")
             print(f"  applied  {name}")
 
+        # A patch that creates a file leaves it untracked, and `git diff` ignores
+        # untracked files — so without this the comparison silently comes up short
+        # by exactly the new files, which is the opposite of what we want to check.
+        git("add", "--intent-to-add", "--all", cwd=clone)
+
         # Structural: the series reproduces the tree we exported from.
         if git("diff", cwd=clone) != git("diff"):
             sys.exit("  The series does not reproduce upstream/symfony-ai's working tree.")
@@ -313,11 +333,10 @@ def verify(bodies: dict[str, str]) -> None:
 
         # Semantic: that tree actually works. This is the check that matters.
         bundle = clone / "src/mcp-bundle"
-        print("  installing the bundle's dependencies…")
-        subprocess.run(
-            ["composer", "install", "--no-interaction", "--no-progress", "--quiet"],
-            cwd=bundle, check=True,
-        )
+        print("  installing the bundle's dependencies against the SDK clone…")
+        # The bundle requires mcp/sdk ^0.7, which resolves to the release — and the
+        # release does not have the 2026-07-28 surface patch 0005 uses.
+        subprocess.run([str(ROOT / "bin/link-sdk"), str(bundle)], check=True, capture_output=True)
         print("  running the bundle's test suite…")
         result = subprocess.run(
             ["vendor/bin/phpunit"], cwd=bundle, capture_output=True, text=True
