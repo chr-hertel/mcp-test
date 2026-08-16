@@ -9,3 +9,9 @@
 
 controllers:
     resource: routing.controllers
+
+# The MCP Bundle's route loader registers one route per HTTP-enabled server
+# (_mcp_endpoint_conference, _mcp_endpoint_organizer, _mcp_endpoint_diagnostics).
+mcp:
+    resource: .
+    type: mcp

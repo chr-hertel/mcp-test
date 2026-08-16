@@ -1,0 +1,169 @@
+mcp:
+    # ------------------------------------------------------------------------
+    # Servers: what this application exposes to MCP hosts.
+    #
+    # Three of them, to show that "which server exposes what" is a configuration
+    # decision, not a code one. The same attributed services are available to all
+    # three; each server's capability lists decide which of them it actually
+    # serves, and each gets its own route, identity and session store.
+    # ------------------------------------------------------------------------
+    servers:
+        # The public face: everything is read-only, so this is the one that is
+        # safe to hand to a host without a firewall in front of it.
+        conference:
+            name: 'symfonycon-programme'
+            version: '1.0.0'
+            description: 'The SymfonyCon Berlin 2026 programme: talks, speakers, tracks and the schedule.'
+            website_url: 'https://symfony.com/symfonycon'
+            icons:
+                - src: 'https://symfony.com/favicon.ico'
+                  mime_type: 'image/x-icon'
+                  sizes: ['any']
+            instructions: |
+                This server exposes the programme of SymfonyCon Berlin 2026.
+
+                Start with `search_talks` for anything open-ended, then read `talk://<slug>` for
+                the full record of a hit. `conference://current` gives you the dates and the
+                timezone; `schedule://<YYYY-MM-DD>` the agenda of one day as Markdown.
+
+                Everything here is read-only. Scheduling and CFP handling live on the separate
+                "organizer" server, which requires authentication.
+            pagination_limit: 25
+            transports:
+                stdio: true    # for Claude Desktop, via `bin/console mcp:server conference`
+                http: true     # for the MCP Inspector and the regression suite
+            http:
+                path: /mcp
+            session:
+                store: file
+                # directory defaults to %kernel.cache_dir%/mcp-sessions/conference
+
+            tools:
+                - 'App\Mcp\Tool\Programme\'
+            prompts: ['*']
+            resources: ['*']
+            resource_templates: ['*']
+            apps: ['*']
+
+        # The privileged face: it can write. Guarded by config/packages/security.yaml.
+        organizer:
+            name: 'symfonycon-organizer'
+            version: '1.0.0'
+            description: 'Programme committee tooling: scheduling, the CFP inbox and workspace imports.'
+            instructions: |
+                Organizer tooling for SymfonyCon Berlin 2026. Everything the "conference" server
+                offers is here too, plus the writing tools.
+
+                `schedule_talk` refuses to double-book a room, so treat its errors as real
+                conflicts rather than something to retry with force. `submit_proposal` asks the
+                user for the speaker details it is missing, and `review_proposal` asks your model
+                to draft the review — both degrade to a plain message when the client cannot do
+                that.
+            transports:
+                stdio: true
+                http: true
+            http:
+                path: /mcp/organizer
+            session:
+                store: file
+
+            tools:
+                - 'App\Mcp\Tool\Programme\'
+                - 'App\Mcp\Tool\Organizer\'
+            prompts: ['*']
+            resources: ['*']
+            resource_templates: ['*']
+            apps: ['*']
+
+        # The workbench: tools that exist to be poked at while developing against
+        # the SDK and the bundle. Never exposed over STDIO — nothing here is
+        # meant for a general-purpose host.
+        diagnostics:
+            name: 'mcp-demo-diagnostics'
+            version: '1.0.0'
+            description: 'Protocol-level probes: capability detection, progress streams, deliberate failures.'
+            instructions: |
+                A workbench for the MCP protocol itself. `probe_client` reports which optional
+                capabilities the connected client advertises, `emit_progress` produces a stream of
+                progress notifications, and `fail_on_purpose` always fails — in either of the two
+                distinguishable ways a tool can.
+            transports:
+                stdio: false
+                http: true
+            http:
+                path: /mcp/diagnostics
+            session:
+                # A different store kind on purpose: the bundle rejects two servers
+                # sharing one, and this exercises the PSR-16 path.
+                store: cache
+                ttl: 900
+
+            tools:
+                - 'App\Mcp\Tool\Diagnostics\'
+
+    # ------------------------------------------------------------------------
+    # Clients: the remote MCP servers this application reaches out to.
+    #
+    # Both of them point back at this very application. That is what makes the
+    # regression suite possible: `bin/console app:mcp:regression` drives a real
+    # MCP client, over a real transport, against a real server — so a change in
+    # either upstream library shows up as a failing assertion here.
+    # ------------------------------------------------------------------------
+    clients:
+        regression:
+            client_info:
+                name: 'mcp-demo-regression'
+                version: '1.0.0'
+                description: 'The regression harness of the MCP demo application.'
+            # Handlers for the three server-initiated round trips. Each capability
+            # is advertised only because a handler backs it.
+            roots: 'App\Mcp\Client\WorkspaceRootsProvider'
+            sampling: 'App\Mcp\Client\ScriptedSamplingHandler'
+            elicitation: 'App\Mcp\Client\ScriptedElicitationHandler'
+            forward_server_logs: true
+            request_timeout: 30
+
+            servers:
+                # Over HTTP, against the running web server.
+                conference_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp'
+                organizer_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/organizer'
+                    headers:
+                        Authorization: 'Bearer %env(MCP_DEMO_ORGANIZER_TOKEN)%'
+                diagnostics_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/diagnostics'
+
+                # Over STDIO, by spawning this application's own console command.
+                # No web server needed, which is what CI uses.
+                conference_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'conference']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
+                organizer_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'organizer']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
+
+        # A second client, to show that identity, timeouts and handlers are
+        # per client: this one advertises nothing, so the same servers see a
+        # client that cannot be asked for roots, sampling or elicitation.
+        minimal:
+            client_info:
+                name: 'mcp-demo-minimal'
+                version: '1.0.0'
+            forward_server_logs: false
+            servers:
+                conference_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'conference']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'

@@ -1,0 +1,60 @@
+diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
+index 3f140a1b..70de18bb 100644
+--- a/src/mcp-bundle/config/options.php
++++ b/src/mcp-bundle/config/options.php
+@@ -141,13 +141,16 @@ return static function (DefinitionConfigurator $configurator): void {
+                             ->defaultNull()
+                         ->end()
+                         ->arrayNode('capabilities')
+-                            ->info('Client capabilities advertised during the handshake. "sampling" and "elicitation" are derived from the handlers configured below.')
++                            ->info('Client capabilities advertised during the handshake. "roots", "sampling" and "elicitation" are derived from the handlers configured below.')
+                             ->addDefaultsIfNotSet()
+                             ->children()
+-                                ->booleanNode('roots')->defaultFalse()->end()
+                                 ->booleanNode('roots_list_changed')->defaultFalse()->end()
+                             ->end()
+                         ->end()
++                        ->stringNode('roots')
++                            ->info('Service id implementing Mcp\Client\Handler\Request\RootsCallbackInterface. Answers the server\'s "roots/list" requests.')
++                            ->defaultNull()
++                        ->end()
+                         ->stringNode('sampling')
+                             ->info('Service id implementing Mcp\Client\Handler\Request\SamplingCallbackInterface. Enables the "sampling" capability.')
+                             ->defaultNull()
+diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
+index f6136243..e6894101 100644
+--- a/src/mcp-bundle/src/McpBundle.php
++++ b/src/mcp-bundle/src/McpBundle.php
+@@ -21,6 +21,7 @@ use Mcp\Client as McpSdkClient;
+ use Mcp\Client\Builder as McpSdkClientBuilder;
+ use Mcp\Client\Handler\Notification\LoggingNotificationHandler;
+ use Mcp\Client\Handler\Request\ElicitationRequestHandler;
++use Mcp\Client\Handler\Request\ListRootsRequestHandler;
+ use Mcp\Client\Handler\Request\SamplingRequestHandler;
+ use Mcp\Client\Transport\HttpTransport;
+ use Mcp\Client\Transport\StdioTransport;
+@@ -231,9 +232,9 @@ final class McpBundle extends AbstractBundle
+                 $client['client_info']['description'],
+             ])
+             ->addMethodCall('setCapabilities', [new Definition(ClientCapabilities::class, [
+-                $client['capabilities']['roots'],
+-                $client['capabilities']['roots_list_changed'],
+                 // Advertised only when a handler backs them, otherwise the server gets "method not found".
++                null !== $client['roots'],
++                $client['capabilities']['roots_list_changed'],
+                 null !== $client['sampling'],
+                 null !== $client['elicitation'],
+             ])])
+@@ -251,6 +252,12 @@ final class McpBundle extends AbstractBundle
+             ]);
+         }
+ 
++        if (null !== $client['roots']) {
++            $definition->addMethodCall('addRequestHandler', [
++                new Definition(ListRootsRequestHandler::class, [new Reference($client['roots']), $logger]),
++            ]);
++        }
++
+         if (null !== $client['sampling']) {
+             $definition->addMethodCall('addRequestHandler', [
+                 new Definition(SamplingRequestHandler::class, [new Reference($client['sampling']), $logger]),

@@ -1,23 +1,36 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 
-# This file is the entry point to configure your own services.
-# Files in the packages/ subdirectory configure your dependencies.
-# See also https://symfony.com/doc/current/service_container/import.html
-
-# Put parameters here that don't need to change on each machine where the app is deployed
-# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    # The directory the MCP client advertises to servers as a workspace root, and
+    # that `import_proposals_from_roots` scans for "*.proposal.md" files.
+    app.workspace_dir: '%kernel.project_dir%/%env(MCP_DEMO_WORKSPACE_DIR)%'
 
 services:
-    # default configuration for services in *this* file
     _defaults:
-        autowire: true      # Automatically injects dependencies in your services.
-        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+        autowire: true
+        autoconfigure: true
 
-    # makes classes in src/ available to be used as services
-    # this creates a service per class whose id is the fully-qualified class name
+    # Every class in src/ becomes a service. That is what makes the MCP attributes
+    # work without any further wiring: the bundle reflects the attributes of
+    # registered services at compile time, so a plain #[McpTool] on an autowired
+    # class is enough to make it available to a server.
     App\:
         resource: '../src/'
 
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+    App\Security\OrganizerTokenAuthenticator:
+        arguments:
+            $expectedToken: '%env(MCP_DEMO_ORGANIZER_TOKEN)%'
+
+    App\Mcp\Client\WorkspaceRootsProvider:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+            $workspaceDir: '%app.workspace_dir%'
+
+    App\Mcp\Tool\Organizer\WorkspaceTool: ~
+
+    # The scripted elicitation handler is stateful: a test scripts an answer and
+    # then reads back what was asked. Resetting it on kernel.reset keeps that
+    # state from leaking between requests in a long-running worker.
+    App\Mcp\Client\ScriptedElicitationHandler:
+        tags:
+            - { name: kernel.reset, method: reset }
