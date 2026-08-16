@@ -25,6 +25,17 @@ $ make upstream-test                # the upstream suites, against the patched c
 `make check` is the gate. It needs no network and no web server, because the
 STDIO connections spawn `bin/console mcp:server` themselves.
 
+To see the protocol rather than assert on it, use the reference client:
+
+```console
+$ make inspector-tour               # narrated CLI walk over the whole surface
+$ make inspector                    # the UI; the only way to watch the MCP App render
+$ make inspector-cli ARGS='--method tools/call --tool-name search_talks --tool-arg query=ai'
+```
+
+Reach for it when a single call is misbehaving — it prints the raw envelope.
+`docs/inspector.md` has the rest.
+
 ## Changing the upstream libraries
 
 Edit the clones under `upstream/` directly, then keep `patches/` in sync — the
@@ -57,6 +68,8 @@ a regression check so a future change is visible, and record it under
   the app templates share them, and the regression suite asserts on them.
 - New concepts need a regression check in `RegressionRunner`, guarded by
   `hasTool()` so the suite still runs against servers that do not expose it.
+- If a new concept is worth *showing*, add a step to `bin/inspector-tour` too —
+  that script is the demo's guided tour, and it should stay complete.
 
 ## Conventions
 

@@ -90,6 +90,23 @@
     <h2>Try it</h2>
     <div class="grid cols-2">
         <div class="panel">
+            <h3>With the MCP Inspector</h3>
+            <p class="muted" style="font-size:13px;margin-top:0">
+                The reference client, fetched by <code>npx</code>. The tour narrates thirteen calls
+                across the whole surface; the UI is the only way to watch the MCP App render.
+            </p>
+            <ul class="plain mono" style="font-size:13px">
+                <li>make inspector-tour</li>
+                <li>make inspector</li>
+                <li>make inspector-stdio</li>
+                <li>make inspector-cli ARGS='--method tools/list'</li>
+            </ul>
+            <p class="muted" style="font-size:13px;margin-bottom:0">
+                Connect it to <code>{{ endpoints }}</code> over Streamable HTTP.
+            </p>
+        </div>
+
+        <div class="panel">
             <h3>From a terminal</h3>
             <ul class="plain mono" style="font-size:13px">
                 <li>php bin/console debug:mcp</li>
@@ -97,18 +114,11 @@
                 <li>php bin/console app:mcp:regression</li>
                 <li>php bin/console app:claude-desktop:config</li>
             </ul>
-        </div>
-        <div class="panel">
-            <h3>From a host</h3>
-            <p class="muted" style="font-size:13px;margin-top:0">
-                <code>app:claude-desktop:config</code> prints the fragment for Claude Desktop's
-                <code>mcpServers</code>. For the MCP Inspector, point it at
-                <code>{{ url('dashboard')|trim('/', 'right') }}/mcp</code> over Streamable HTTP.
-            </p>
             <p class="muted" style="font-size:13px;margin-bottom:0">
-                The <code>organizer</code> endpoint needs
-                <code>Authorization: Bearer &lt;MCP_DEMO_ORGANIZER_TOKEN&gt;</code>; over STDIO it is
-                unauthenticated, because the process boundary is the boundary.
+                <code>app:claude-desktop:config</code> prints the fragment for Claude Desktop's
+                <code>mcpServers</code>, with absolute paths. The <code>organizer</code> endpoint
+                needs <code>Authorization: Bearer &lt;MCP_DEMO_ORGANIZER_TOKEN&gt;</code>; over
+                STDIO it is unauthenticated, because the process boundary is the boundary.
             </p>
         </div>
     </div>

@@ -103,9 +103,35 @@ clients: ## List the configured MCP clients and their servers
 claude-config: ## Print the Claude Desktop configuration fragment
 	$(CONSOLE) app:claude-desktop:config
 
+# -- MCP Inspector -----------------------------------------------------------
+# The reference client, fetched by npx. See docs/inspector.md.
+# SERVER picks which of this application's servers to point it at.
+
+SERVER ?= conference
+INSPECTOR := npx -y @modelcontextprotocol/inspector
+
+# The URL and the auth header the chosen server needs.
+inspector_url = $(if $(filter conference,$(SERVER)),http://127.0.0.1:$(PORT)/mcp,http://127.0.0.1:$(PORT)/mcp/$(SERVER))
+inspector_header = $(if $(filter organizer,$(SERVER)),--header "Authorization: Bearer $(shell grep -E '^MCP_DEMO_ORGANIZER_TOKEN=' .env | cut -d= -f2-)",)
+
 .PHONY: inspector
-inspector: ## Open the MCP Inspector against the conference endpoint (needs node)
-	npx @modelcontextprotocol/inspector
+inspector: ## Open the Inspector UI (needs `make serve`; SERVER=conference|organizer|diagnostics)
+	@echo "Connect to $(inspector_url) over Streamable HTTP."
+	@$(if $(filter organizer,$(SERVER)),echo 'Add the header: Authorization: Bearer <MCP_DEMO_ORGANIZER_TOKEN>',)
+	$(INSPECTOR)
+
+.PHONY: inspector-stdio
+inspector-stdio: ## Open the Inspector UI against a STDIO server (no web server needed)
+	$(INSPECTOR) $(PHP) bin/console mcp:server $(SERVER)
+
+.PHONY: inspector-cli
+inspector-cli: ## One Inspector CLI call, e.g. make inspector-cli ARGS='--method tools/list'
+	@test -n "$(ARGS)" || { echo "Pass ARGS, e.g. ARGS='--method tools/list'"; exit 1; }
+	$(INSPECTOR) --cli $(inspector_url) --transport http $(inspector_header) $(ARGS)
+
+.PHONY: inspector-tour
+inspector-tour: ## Walk the whole MCP surface through the Inspector CLI, over HTTP
+	@bin/inspector-tour
 
 # -- checking ----------------------------------------------------------------
 

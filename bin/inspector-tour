@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+#
+# A guided tour of this application's MCP surface, driven entirely by the
+# reference client — the MCP Inspector's CLI mode.
+#
+# Everything here is also covered by `make regression`, which is faster and
+# asserts. The point of this script is different: it shows the *protocol*, using
+# a client that knows nothing about this application, so you can read what a
+# host actually receives.
+#
+#   make serve && make inspector-tour
+#
+# Environment:
+#   PORT     port `make serve` is listening on (default 8099)
+#   SERVER   base URL override, if you are not on localhost
+#
+set -uo pipefail
+
+PORT="${PORT:-8099}"
+BASE="${BASE:-http://127.0.0.1:$PORT}"
+TOKEN="$(grep -E '^MCP_DEMO_ORGANIZER_TOKEN=' "$(dirname "$0")/../.env" | cut -d= -f2- | tr -d '"')"
+INSPECTOR=(npx -y @modelcontextprotocol/inspector --cli)
+
+bold=$'\033[1m'; dim=$'\033[2m'; green=$'\033[32m'; red=$'\033[31m'; reset=$'\033[0m'
+step=0
+failed=0
+
+die() { printf '%s%s%s\n' "$red" "$1" "$reset" >&2; exit 1; }
+
+# say <heading> <explanation>
+say() {
+    step=$((step + 1))
+    printf '\n%s%2d. %s%s\n    %s%s%s\n' "$bold" "$step" "$1" "$reset" "$dim" "$2" "$reset"
+}
+
+# run <endpoint> <jq-ish python expression over the parsed JSON> <inspector args...>
+run() {
+    local endpoint="$1"; shift
+    local summarise="$1"; shift
+    local -a args=("$BASE$endpoint" --transport http)
+
+    [[ "$endpoint" == /mcp/organizer ]] && args+=(--header "Authorization: Bearer $TOKEN")
+
+    local output
+    if ! output="$("${INSPECTOR[@]}" "${args[@]}" "$@" 2>&1)"; then
+        printf '    %s✗ the Inspector failed%s\n%s\n' "$red" "$reset" "${output:0:400}"
+        failed=$((failed + 1))
+        return 1
+    fi
+
+    if ! printf '%s' "$output" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.stderr.write('not JSON: ' + sys.stdin.read()[:300])
+    raise SystemExit(1)
+print('    $green→$reset ' + str($summarise))
+"; then
+        printf '    %s✗ unexpected response%s\n' "$red" "$reset"
+        failed=$((failed + 1))
+        return 1
+    fi
+}
+
+# Same, but for a tool that is *meant* to fail: the Inspector CLI exits non-zero
+# and appends its own {"error":{"code":"tool_is_error"}} line whenever a result
+# carries isError, so the tool's own answer is the first JSON object printed.
+run_tool_error() {
+    local endpoint="$1"; shift
+    local summarise="$1"; shift
+
+    local output
+    output="$("${INSPECTOR[@]}" "$BASE$endpoint" --transport http "$@" 2>&1)"
+
+    if ! printf '%s' "$output" | python3 -c "
+import json, sys
+d = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())[0]
+assert d.get('isError') is True, 'the tool did not report isError'
+print('    $green→$reset ' + str($summarise))
+"; then
+        printf '    %s✗ unexpected response%s\n%s\n' "$red" "$reset" "${output:0:400}"
+        failed=$((failed + 1))
+        return 1
+    fi
+}
+
+command -v npx >/dev/null || die 'npx is not installed. The Inspector needs Node 18+.'
+curl -sf -o /dev/null "$BASE/" || die "Nothing is answering on $BASE. Run \`make serve\` first."
+
+printf '%sA tour of the MCP surface, through the Inspector CLI%s\n' "$bold" "$reset"
+printf '%s%s — each step is one npx invocation, so this takes a minute.%s\n' "$dim" "$BASE" "$reset"
+
+say 'What the conference server advertises' \
+    'tools/list — nine tools, across two pages of five. The Inspector follows the cursor.'
+run /mcp "'%d tools: %s' % (len(d['tools']), ', '.join(t['name'] for t in d['tools']))" \
+    --method tools/list
+
+say 'A schema generated from a PHP method signature' \
+    "search_talks: track and level are native enums, limit carries #[Schema] bounds."
+run /mcp "'track=%s  limit in [%s, %s]' % (
+        d['tools'][[t['name'] for t in d['tools']].index('search_talks')]['inputSchema']['properties']['track'].get('enum'),
+        d['tools'][[t['name'] for t in d['tools']].index('search_talks')]['inputSchema']['properties']['limit']['minimum'],
+        d['tools'][[t['name'] for t in d['tools']].index('search_talks')]['inputSchema']['properties']['limit']['maximum'])" \
+    --method tools/list
+
+say 'Calling a tool, with structured output' \
+    'The declared outputSchema is why the result carries structuredContent as well as text.'
+run /mcp "'%d hit(s): %s' % (d['structuredContent']['count'], d['structuredContent']['talks'][0]['title'])" \
+    --method tools/call --tool-name search_talks --tool-arg query=messenger
+
+say 'A tool failure the model can act on' \
+    'isError: true with a readable message — not a JSON-RPC error the model cannot see.'
+run_tool_error /mcp "'isError=true: ' + d['content'][0]['text']" \
+    --method tools/call --tool-name get_talk --tool-arg slug=no-such-talk
+
+say 'A result mixing three content types' \
+    'Text, a resource_link to the speaker, and an embedded schedule resource.'
+run /mcp "', '.join(c['type'] for c in d['content'])" \
+    --method tools/call --tool-name get_talk --tool-arg slug=messenger-at-scale
+
+say 'Reading a resource through a template' \
+    'talk://{slug} is one URI pattern standing in for every talk.'
+run /mcp "json.loads(d['contents'][0]['text'])['title'] + '  (' + d['contents'][0]['mimeType'] + ')'" \
+    --method resources/read --uri talk://rag-pipelines-in-php
+
+say 'Binary content over the wire' \
+    'conference://badge.png comes back base64-encoded in a blob, not a text field.'
+run /mcp "'%s, %d bytes of %s' % (list(d['contents'][0].keys())[-1], len(d['contents'][0]['blob']), d['contents'][0]['mimeType'])" \
+    --method resources/read --uri conference://badge.png
+
+say 'Resources that no attribute declared' \
+    'One per conference day, registered at runtime by a LoaderInterface.'
+run /mcp "', '.join(r['uri'] for r in d['resources'] if r['uri'].startswith('info://'))" \
+    --method resources/list
+
+say 'A prompt, filled from the database' \
+    'The user picks these; the server renders them with live data before the model sees them.'
+run /mcp "d['messages'][0]['content']['text'].splitlines()[0]" \
+    --method prompts/get --prompt-name promote_talk --prompt-args slug=messenger-at-scale platform=bluesky
+
+say 'The MCP App, without invoking it' \
+    '--app-info reads the UI metadata #[AsMcpApp] generated.'
+if out="$("${INSPECTOR[@]}" "$BASE/mcp" --transport http --method tools/call \
+        --tool-name browse_schedule --app-info 2>&1)"; then
+    printf '    %s→%s %s\n' "$green" "$reset" "$(printf '%s' "$out" | tail -1)"
+else
+    printf '    %s✗ --app-info failed%s\n' "$red" "$reset"; failed=$((failed + 1))
+fi
+
+say 'The app tool renders its screen on the server' \
+    'Twig produces the HTML; the host drops it into the iframe. No client-side rendering.'
+run /mcp "'%d characters of HTML, %d declarative tool triggers' % (
+        len(d['structuredContent']['html']),
+        d['structuredContent']['html'].count('data-call='))" \
+    --method tools/call --tool-name browse_schedule --tool-arg day=2026-11-19
+
+say 'What the Inspector itself advertises' \
+    'probe_client, on the diagnostics server. Sampling and elicitation need an interactive client.'
+run /mcp/diagnostics "'protocol %s — ' % d['structuredContent']['protocol_version'] + ', '.join(
+        '%s=%s' % (k, json.dumps(v)) for k, v in d['structuredContent'].items() if k != 'protocol_version')" \
+    --method tools/call --tool-name probe_client
+
+say 'The privileged server needs a token' \
+    'Same application, different route, an ordinary Symfony firewall in front of it.'
+run /mcp/organizer "'%d tools, including %s' % (len(d['tools']),
+        ', '.join(n for n in (t['name'] for t in d['tools']) if n in ('schedule_talk', 'submit_proposal')))" \
+    --method tools/list
+
+printf '\n'
+if [[ $failed -eq 0 ]]; then
+    printf '%s✓ %d steps, all answered.%s\n' "$green" "$step" "$reset"
+    printf '%sNow try the UI: `make inspector`, then open browse_schedule to see the app render.%s\n' "$dim" "$reset"
+    exit 0
+fi
+
+printf '%s✗ %d of %d steps failed.%s\n' "$red" "$failed" "$step" "$reset"
+printf '%sIf the failures are on /mcp/organizer, check MCP_DEMO_ORGANIZER_TOKEN in .env.%s\n' "$dim" "$reset"
+exit 1

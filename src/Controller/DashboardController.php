@@ -48,9 +48,12 @@ final class DashboardController extends AbstractController
     #[Route('/', name: 'dashboard')]
     public function index(): Response
     {
+        $servers = $this->servers();
+
         return $this->render('dashboard/index.html.twig', [
             'conference' => $this->conferences->current(),
-            'servers' => $this->servers(),
+            'servers' => $servers,
+            'endpoints' => implode(', ', array_filter(array_column($servers, 'endpoint'))),
             'counts' => [
                 'talks' => \count($this->talks->findAll()),
                 'speakers' => \count($this->speakers->findAllOrdered()),

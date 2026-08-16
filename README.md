@@ -141,6 +141,64 @@ $ make upstream-test # the upstream libraries' own suites, against the patched c
 
 ---
 
+## Try it
+
+### With the MCP Inspector
+
+The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is the
+reference client. `npx` fetches it; nothing to install.
+
+```console
+$ make serve
+$ make inspector-tour   # thirteen CLI calls, narrated, over the whole surface
+$ make inspector        # the UI — and the only way to see the MCP App render
+```
+
+The tour walks the surface with a client that knows nothing about this
+application, so what you read is the protocol rather than a chat window:
+
+```
+ 3. Calling a tool, with structured output
+    The declared outputSchema is why the result carries structuredContent as well as text.
+    → 1 hit(s): Messenger at Scale
+
+ 5. A result mixing three content types
+    Text, a resource_link to the speaker, and an embedded schedule resource.
+    → text, resource_link, resource
+
+10. The MCP App, without invoking it
+    --app-info reads the UI metadata #[AsMcpApp] generated.
+    → {"hasApp":true,"resourceUri":"ui://schedule","visibility":["model","app"],"prefersBorder":true}
+```
+
+Individual calls, against any of the three servers:
+
+```console
+$ make inspector-cli ARGS='--method tools/call --tool-name search_talks --tool-arg query=messenger'
+$ make inspector-cli SERVER=organizer ARGS='--method tools/list'   # adds the bearer token
+$ make inspector-stdio SERVER=conference                            # no web server at all
+```
+
+In the UI, open `browse_schedule` on the `conference` server: the Inspector runs
+a sandbox origin and renders the MCP App in a real iframe, buttons and all.
+Everything else worth clicking is in [`docs/inspector.md`](docs/inspector.md).
+
+### From the console
+
+```console
+$ php bin/console debug:mcp                                # what each server exposes
+$ php bin/console mcp:client:debug regression conference_stdio   # connect and list
+$ php bin/console app:mcp:regression                       # exercise everything
+```
+
+### In a browser
+
+`make serve`, then <http://127.0.0.1:8099> — the same programme rendered for
+people, with the MCP surface of every server introspected out of the running
+container.
+
+---
+
 ## Using it from Claude Desktop
 
 ```console
@@ -167,6 +225,7 @@ around, because the fix belongs upstream.
 |---|---|
 | [`docs/patches.md`](docs/patches.md) | what building this found in the upstream libraries, and the patches |
 | [`docs/claude-desktop.md`](docs/claude-desktop.md) | connecting a host, and what to ask it |
+| [`docs/inspector.md`](docs/inspector.md) | driving the servers with the MCP Inspector, UI and CLI |
 | [`docs/deployment.md`](docs/deployment.md) | what MCP asks of a PHP process: workers, sessions, stdout |
 | [`docs/architecture.md`](docs/architecture.md) | how the pieces fit, and why they are arranged this way |
 
