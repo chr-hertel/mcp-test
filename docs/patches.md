@@ -141,7 +141,8 @@ The first patch to the SDK rather than the bundle.
 `#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
 takes precedence over individual properties", and at the *method* level
 `SchemaGenerator` unwraps it exactly so. At the *parameter* level it merged the
-attribute as an ordinary key, so the property reached clients as:
+attribute as an ordinary key — in **two** places, the ordinary path and the
+variadic one — so the property reached clients as:
 
 ```json
 "track": { "type": "string", "default": "backend",
@@ -161,6 +162,39 @@ mismatch.
 Found by the *headers* group of the 2026-07-28 regression suite, whose "a header
 that disagrees with the body is refused" check sent a contradictory
 `Mcp-Param-Track` and got a perfectly normal answer.
+
+#### Siblings
+
+The variadic case turned up by probing the generator across seven shapes rather
+than by assuming the first one was alone. The rest came out clean:
+
+| Shape | |
+|---|---|
+| variadic parameter | **the same bug**, fixed alongside |
+| definition declaring `type: array` with no `items` | gains `items: {}`, like any array schema |
+| definition reshaping the parameter's type | signature default kept — see below |
+| definition over an enum-typed parameter | definition wins, as documented |
+| method-level *and* parameter-level definition | method-level replaces everything, as documented |
+| `outputSchema` | passed through raw; no `definition` involved |
+| prompt arguments, resource-template variables | never reach the generator — `PromptArgument` is name/description/required, per spec |
+
+Two behaviours were judgement calls rather than accidents, so the patch pins both
+with tests:
+
+- **The signature default survives.** It is what the handler receives when the
+  argument is omitted, so it is kept even where the definition describes a
+  different shape. `default` is an annotation in JSON Schema, not a constraint,
+  so an inconsistent one is still valid.
+- **The `items` invariant still applies**, so a "complete" definition of an array
+  still gains `items: {}` when it declares none.
+
+One consequence worth flagging in a changelog: an `x-mcp-header` that was nested
+was also invisible to `Tool`'s validation, which refuses annotations on non-scalar
+properties, invalid field names and case-insensitive duplicates. Now that the
+annotation reaches the schema, one that was silently ignored can become a hard
+failure at registration — most likely on a variadic parameter, which is always
+`type: array` and therefore cannot be mirrored into a header. That is the right
+answer, but it turns a quietly broken tool into a loud one.
 
 ### 6. `#[Target('<client>')]` did not resolve
 

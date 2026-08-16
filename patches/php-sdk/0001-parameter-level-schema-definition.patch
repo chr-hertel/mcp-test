@@ -2,9 +2,10 @@ mcp/sdk: honour a complete schema definition on a parameter
 
 `#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
 takes precedence over individual properties", and at the *method* level
-`SchemaGenerator` unwraps it exactly so. At the *parameter* level it did not: the
-attribute's `toArray()` was merged into the inferred schema as an ordinary key,
-so the property came out as
+`SchemaGenerator` unwraps it exactly so. At the *parameter* level it did not, in
+two places — the ordinary path and the variadic one — where the attribute's
+`toArray()` was merged into the inferred schema as an ordinary key. The property
+then reached clients as:
 
 ```json
 "track": {
@@ -17,23 +18,39 @@ so the property came out as
 A nested `definition` member is not JSON Schema. No client reads it, and
 everything it holds is silently lost.
 
-That matters more than it looks on the 2026-07-28 branch, because `x-mcp-header`
-— the annotation that mirrors an argument into `Mcp-Param-*` so an intermediary
-can route without parsing the body — has no representation on the `Schema`
-attribute other than `definition`. Nesting it means the server never learns the
-argument is header-mirrored, so it never validates the two against each other,
-and the `-32020` the revision requires on a mismatch is never emitted.
+That matters more than it looks on this branch, because `x-mcp-header` — the
+annotation that mirrors an argument into `Mcp-Param-*` so an intermediary can
+route without parsing the body — has no representation on the `Schema` attribute
+other than `definition`. Nested, the server never learns the argument is
+header-mirrored, so it never validates the two against each other, and the
+`-32020` the revision requires on a mismatch is never emitted.
 
-The fix mirrors the method-level path: a `definition` replaces the property
-schema. The inferred `default` is kept when the definition does not state one,
-since that comes from the signature rather than from the schema.
+The fix mirrors the method-level path in both places: a `definition` replaces the
+property schema. For a variadic the `type: array` is still forced afterwards,
+since a variadic always arrives as an array however the definition describes it.
+
+Two deliberate choices, both pinned by tests:
+
+- **The signature default is kept** when the definition does not state one. It
+  comes from the signature rather than the schema — it is what the handler
+  actually receives when the argument is omitted — so it survives even a
+  definition that reshapes the parameter. `default` is an annotation in JSON
+  Schema, not a constraint, so an inconsistent one stays valid.
+- **The `items` invariant still applies**, so a definition declaring `type: array`
+  without `items` gets `items: {}` like any other array schema.
+
+Worth noting for the changelog: an `x-mcp-header` that was previously nested was
+also invisible to `Tool`'s validation. Now that it reaches the schema, an
+annotation that was silently ignored can become a hard failure at registration —
+most likely on a variadic parameter, which is always `type: array`, and arrays
+cannot be mirrored into a header. That is the correct answer, but it turns a
+quietly broken tool into a loud one.
 
 Found by the demo's 2026-07-28 regression suite, whose "a header that disagrees
-with the body is refused" check passed a contradictory `Mcp-Param-Track` and was
+with the body is refused" check sent a contradictory `Mcp-Param-Track` and was
 answered normally.
-
 diff --git a/src/Capability/Discovery/SchemaGenerator.php b/src/Capability/Discovery/SchemaGenerator.php
-index 3975a6a..9f745b4 100644
+index 3975a6a..457e98f 100644
 --- a/src/Capability/Discovery/SchemaGenerator.php
 +++ b/src/Capability/Discovery/SchemaGenerator.php
 @@ -237,7 +237,25 @@ final class SchemaGenerator implements SchemaGeneratorInterface
@@ -63,11 +80,28 @@ index 3975a6a..9f745b4 100644
          }
  
          // Run after all merges so that when a Schema attribute reshapes the parameter
+@@ -326,7 +344,15 @@ final class SchemaGenerator implements SchemaGeneratorInterface
+ 
+         // Apply parameter-level Schema attributes first
+         if (!empty($paramInfo['parameter_schema'])) {
+-            $paramSchema = array_merge($paramSchema, $paramInfo['parameter_schema']);
++            $parameterLevelSchema = $paramInfo['parameter_schema'];
++
++            // A `definition` is the whole schema, here as anywhere else. Merged as
++            // an ordinary key it would leave a literal "definition" member on the
++            // property, which is not JSON Schema and which no client reads.
++            $paramSchema = isset($parameterLevelSchema['definition']) && \is_array($parameterLevelSchema['definition'])
++                ? $parameterLevelSchema['definition']
++                : array_merge($paramSchema, $parameterLevelSchema);
++
+             // Ensure type is always array for variadic
+             $paramSchema['type'] = 'array';
+         }
 diff --git a/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php b/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
-index d695917..2e837bd 100644
+index d695917..6521fba 100644
 --- a/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
 +++ b/tests/Unit/Capability/Discovery/SchemaGeneratorFixture.php
-@@ -63,6 +63,25 @@ class SchemaGeneratorFixture
+@@ -63,6 +63,45 @@ class SchemaGeneratorFixture
      /**
       * Method-level Schema with complete definition.
       */
@@ -90,14 +124,34 @@ index d695917..2e837bd 100644
 +    ): void {
 +    }
 +
++    /**
++     * A complete definition on a variadic parameter, which arrives as an array
++     * however the definition describes it.
++     */
++    public function variadicCompleteDefinition(
++        #[Schema(definition: ['type' => 'array', 'description' => 'Tags to apply.', 'items' => ['type' => 'string']])]
++        string ...$tags,
++    ): void {
++    }
++
++    /**
++     * A definition that reshapes the parameter, so the signature default no
++     * longer describes the same kind of value.
++     */
++    public function definitionReshapingTheParameter(
++        #[Schema(definition: ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']]])]
++        string $payload = '{}',
++    ): void {
++    }
++
      #[Schema(definition: [
          'type' => 'object',
          'description' => 'Creates a custom filter with complete definition',
 diff --git a/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php b/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
-index 0c223cb..b0b943e 100644
+index 0c223cb..b37fa3d 100644
 --- a/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
 +++ b/tests/Unit/Capability/Discovery/SchemaGeneratorTest.php
-@@ -92,6 +92,32 @@ final class SchemaGeneratorTest extends TestCase
+@@ -92,6 +92,60 @@ final class SchemaGeneratorTest extends TestCase
          ], $schema);
      }
  
@@ -125,6 +179,34 @@ index 0c223cb..b0b943e 100644
 +
 +        // Both have defaults, so an empty "required" is dropped entirely.
 +        $this->assertArrayNotHasKey('required', $schema);
++    }
++
++    public function testUsesCompleteSchemaDefinitionFromVariadicParameter(): void
++    {
++        $method = new \ReflectionMethod(SchemaGeneratorFixture::class, 'variadicCompleteDefinition');
++        $schema = $this->schemaGenerator->generate($method);
++
++        // Same rule as any other parameter: the definition is the schema. The
++        // array type is still forced, because a variadic always arrives as one
++        // whatever the definition says.
++        $this->assertEquals([
++            'type' => 'array',
++            'description' => 'Tags to apply.',
++            'items' => ['type' => 'string'],
++        ], $schema['properties']['tags']);
++    }
++
++    public function testKeepsTheSignatureDefaultWhenADefinitionReshapesTheParameter(): void
++    {
++        $method = new \ReflectionMethod(SchemaGeneratorFixture::class, 'definitionReshapingTheParameter');
++        $schema = $this->schemaGenerator->generate($method);
++
++        // The default comes from the signature, not from the schema: it is what
++        // the handler actually receives when the argument is omitted, so it is
++        // kept even where the definition describes a different shape. `default`
++        // is an annotation in JSON Schema, not a constraint, so this stays valid.
++        $this->assertSame('{}', $schema['properties']['payload']['default']);
++        $this->assertSame('object', $schema['properties']['payload']['type']);
 +    }
 +
      public function testGeneratesSchemaFromMethodLevelSchemaAttributeWithProperties(): void
