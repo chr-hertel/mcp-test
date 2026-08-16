@@ -23,6 +23,7 @@ final class JsonRpcBrowser
 
     private int $id = 0;
     private ?string $sessionId = null;
+    private ?int $initializeStatus = null;
 
     /**
      * @param array<string, string> $extraHeaders
@@ -52,10 +53,20 @@ final class JsonRpcBrowser
         ]);
 
         $this->sessionId = $this->lastResponse()->headers->get('Mcp-Session-Id');
+        $this->initializeStatus = $this->lastResponse()->getStatusCode();
 
         $this->notify('notifications/initialized');
 
         return $response['result'] ?? [];
+    }
+
+    /**
+     * The status code the `initialize` request itself answered with, before the
+     * `initialized` notification overwrote the browser's last response.
+     */
+    public function getInitializeStatus(): ?int
+    {
+        return $this->initializeStatus;
     }
 
     public function getSessionId(): ?string

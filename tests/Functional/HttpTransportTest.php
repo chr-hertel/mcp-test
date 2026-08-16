@@ -24,7 +24,7 @@ final class HttpTransportTest extends McpTestCase
         $rpc = $this->rpc('/mcp');
         $result = $rpc->initialize();
 
-        $this->assertSame(Response::HTTP_OK, $rpc->lastResponse()->getStatusCode());
+        $this->assertSame(Response::HTTP_OK, $rpc->getInitializeStatus());
         $this->assertNotNull($rpc->getSessionId(), 'The server minted no Mcp-Session-Id.');
 
         $this->assertSame('symfonycon-programme', $result['serverInfo']['name']);
@@ -179,7 +179,10 @@ final class HttpTransportTest extends McpTestCase
 
     public function testASessionFromOneServerIsNotAcceptedByAnother(): void
     {
-        $conference = $this->rpc('/mcp');
+        $browser = static::createClient();
+        $browser->catchExceptions(false);
+
+        $conference = new JsonRpcBrowser($browser, '/mcp');
         $conference->initialize();
         $stolen = $conference->getSessionId();
         $this->assertNotNull($stolen);
@@ -187,7 +190,7 @@ final class HttpTransportTest extends McpTestCase
         // Each server has its own session store, so replaying a session id across
         // the firewall boundary must not work. This is why the bundle refuses a
         // shared store at compile time.
-        $diagnostics = $this->rpc('/mcp/diagnostics');
+        $diagnostics = new JsonRpcBrowser($browser, '/mcp/diagnostics');
         $diagnostics->setSessionId($stolen);
 
         $envelope = $diagnostics->request('tools/list');
