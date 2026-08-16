@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The point of this repository is to notice when the upstream branches move.
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    name: Demo (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ctype, iconv, fileinfo, pdo_sqlite
+          coverage: none
+          # An MCP tool that samples or elicits waits on a human; the default
+          # 30s would kill the process mid-fiber.
+          ini-values: max_execution_time=0, memory_limit=512M
+
+      - name: Clone the upstream branches and apply the patches
+        run: make upstream
+
+      - name: Fail if a patch no longer applies
+        # `make apply-patches` skips a patch it cannot apply, which is right for
+        # a re-run but wrong here: upstream moving out from under a patch is
+        # exactly what this repository exists to notice.
+        run: |
+          for patch in patches/mcp-bundle/*.patch; do
+            git -C upstream/symfony-ai apply --check --reverse "$PWD/$patch" \
+              || { echo "::error::$patch is not applied — the branch moved underneath it"; exit 1; }
+          done
+
+      - uses: ramsey/composer-install@v3
+
+      - name: Seed the databases
+        run: make db
+
+      - name: PHPUnit
+        run: make test
+
+      - name: Regression suite over STDIO
+        run: make regression-stdio
+
+      - name: Regression suite over HTTP
+        run: |
+          # Two workers minimum, or a server-to-client round trip deadlocks.
+          # See docs/deployment.md.
+          PHP_CLI_SERVER_WORKERS=6 php -S 127.0.0.1:8099 -t public public/index.php &
+          for _ in $(seq 1 30); do
+            curl -sf -o /dev/null "http://127.0.0.1:8099/" && break
+            sleep 1
+          done
+          php bin/console app:mcp:regression --transport=http
+        env:
+          MCP_DEMO_BASE_URL: http://127.0.0.1:8099
+
+  upstream:
+    name: Upstream suites, patched
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, iconv, fileinfo
+          coverage: none
+
+      - name: Clone the upstream branches and apply the patches
+        run: make upstream
+
+      - name: mcp/sdk
+        working-directory: upstream/php-sdk
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpunit --testsuite=unit
+
+      - name: symfony/mcp-bundle
+        working-directory: upstream/symfony-ai/src/mcp-bundle
+        run: |
+          composer install --no-interaction --no-progress
+          vendor/bin/phpunit

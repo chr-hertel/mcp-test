@@ -474,6 +474,18 @@ final class RegressionRunner
 
             return \sprintf('%d suggestion(s) for "doctrine"', \count($result->values));
         });
+
+        $this->check('completion', 'completion/complete (from a PHP enum)', function () use ($connection): string {
+            // #[CompletionProvider(enum: Track::class)] — the SDK reads the cases
+            // off the enum, so the list cannot drift from the type.
+            $result = $connection->complete(new ResourceReference('track://{track}'), ['name' => 'track', 'value' => 'a']);
+
+            if (!\in_array('architecture', $result->values, true) || !\in_array('ai', $result->values, true)) {
+                throw new \RuntimeException('The enum completion did not offer the matching cases.');
+            }
+
+            return implode(', ', $result->values);
+        });
     }
 
     // -- error handling ------------------------------------------------------
