@@ -15,7 +15,15 @@ $ make apply-patches     # re-apply after re-cloning; skips what is already in
 $ make export-patches    # dump the clones' working trees back out to patches/
 ```
 
-Base branches:
+The series is re-split and re-verified by `make export-patches`, which applies it
+to a pristine clone of the branch tip, checks it reproduces the working tree, and
+then **runs that repository's own test suite there**. The last step is not
+ceremony: an earlier version verified only that the patches reproduced the tree,
+and happily exported a series missing a `use` statement — it applied, it
+compiled, and the failure surfaced two phases later in the demo's own regression
+suite.
+
+Base branches (record the SHA when you tag — these are branches, not releases):
 
 | Package | Repository | Branch |
 |---|---|---|

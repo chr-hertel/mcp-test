@@ -38,15 +38,12 @@ jobs:
       - name: Clone the upstream branches and apply the patches
         run: make upstream
 
-      - name: Fail if a patch no longer applies
-        # `make apply-patches` skips a patch it cannot apply, which is right for
-        # a re-run but wrong here: upstream moving out from under a patch is
-        # exactly what this repository exists to notice.
-        run: |
-          for patch in patches/mcp-bundle/*.patch; do
-            git -C upstream/symfony-ai apply --check --reverse "$PWD/$patch" \
-              || { echo "::error::$patch is not applied — the branch moved underneath it"; exit 1; }
-          done
+      - name: Fail if either upstream branch has moved
+        # The whole point of the nightly run: `make upstream` clones the branch
+        # tips, so a patch that no longer fits them fails there — and this
+        # compares the clones against the tips once more, in case the branch
+        # moved between the clone and now.
+        run: make upstream-check
 
       - uses: ramsey/composer-install@v3
 

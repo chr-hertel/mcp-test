@@ -40,11 +40,10 @@ diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
 index f6136243..343b4e3c 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -15,12 +15,14 @@ use Mcp\Capability\Attribute\McpPrompt;
+@@ -15,12 +15,13 @@ use Mcp\Capability\Attribute\McpPrompt;
  use Mcp\Capability\Attribute\McpResource;
  use Mcp\Capability\Attribute\McpResourceTemplate;
  use Mcp\Capability\Attribute\McpTool;
-+use Mcp\Capability\Completion\ProviderInterface as CompletionProviderInterface;
  use Mcp\Capability\Registry;
  use Mcp\Capability\Registry\Loader\LoaderInterface;
  use Mcp\Client as McpSdkClient;
@@ -82,18 +81,18 @@ index f6136243..343b4e3c 100644
                  new Definition(SamplingRequestHandler::class, [new Reference($client['sampling']), $logger]),
 
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
-index b1c1f123..bb8d7865 100644
+index 5e4c7fb5..69f290ac 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
-@@ -12,6 +12,7 @@
- namespace Symfony\AI\McpBundle\Tests\DependencyInjection;
- 
+@@ -14,6 +14,7 @@ namespace Symfony\AI\McpBundle\Tests\DependencyInjection;
+ use Http\Discovery\Exception\NotFoundException;
+ use Http\Discovery\Psr18ClientDiscovery;
  use Mcp\Client as McpSdkClient;
 +use Mcp\Client\Handler\Request\ListRootsRequestHandler;
  use Mcp\Client\Transport\HttpTransport;
  use Mcp\Client\Transport\StdioTransport;
  use Mcp\Schema\ClientCapabilities;
-@@ -160,9 +161,9 @@ final class McpBundleClientTest extends TestCase
+@@ -162,9 +163,9 @@ final class McpBundleClientTest extends TestCase
          $container = $this->buildContainer($this->config([
              'plain' => ['servers' => ['github' => ['transport' => 'http', 'url' => 'https://example.com/mcp']]],
              'rich' => [
@@ -104,7 +103,7 @@ index b1c1f123..bb8d7865 100644
                  'servers' => ['github' => ['transport' => 'http', 'url' => 'https://example.com/mcp']],
              ],
          ]));
-@@ -175,7 +176,30 @@ final class McpBundleClientTest extends TestCase
+@@ -177,7 +178,30 @@ final class McpBundleClientTest extends TestCase
  
          $rich = $this->callsNamed($container, 'rich', 'github', 'setCapabilities')[0][1][0];
          $this->assertSame([true, false, true, true], $rich->getArguments());

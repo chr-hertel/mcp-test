@@ -12,7 +12,7 @@ Autoconfigures every service implementing the SDK's
 tag, and adds them to each server's locator keyed by class name and service id.
 
 diff --git a/src/mcp-bundle/src/DependencyInjection/McpPass.php b/src/mcp-bundle/src/DependencyInjection/McpPass.php
-index 08bc0e6e..7197c298 100644
+index b32f8568..4def5c9e 100644
 --- a/src/mcp-bundle/src/DependencyInjection/McpPass.php
 +++ b/src/mcp-bundle/src/DependencyInjection/McpPass.php
 @@ -166,11 +166,29 @@ final class McpPass implements CompilerPassInterface
@@ -50,6 +50,21 @@ diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
 index f6136243..343b4e3c 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
+@@ -15,13 +15,14 @@ use Mcp\Capability\Attribute\McpPrompt;
+ use Mcp\Capability\Attribute\McpResource;
+ use Mcp\Capability\Attribute\McpResourceTemplate;
+ use Mcp\Capability\Attribute\McpTool;
++use Mcp\Capability\Completion\ProviderInterface as CompletionProviderInterface;
+ use Mcp\Capability\Registry;
+ use Mcp\Capability\Registry\Loader\LoaderInterface;
+ use Mcp\Client as McpSdkClient;
+ use Mcp\Client\Builder as McpSdkClientBuilder;
+ use Mcp\Client\Handler\Notification\LoggingNotificationHandler;
+ use Mcp\Client\Handler\Request\ElicitationRequestHandler;
+ use Mcp\Client\Handler\Request\ListRootsRequestHandler;
+ use Mcp\Client\Handler\Request\SamplingRequestHandler;
+ use Mcp\Client\Transport\HttpTransport;
+ use Mcp\Client\Transport\StdioTransport;
 @@ -93,6 +95,12 @@ final class McpBundle extends AbstractBundle
          $builder->registerForAutoconfiguration(LoaderInterface::class)
              ->addTag('mcp.loader');

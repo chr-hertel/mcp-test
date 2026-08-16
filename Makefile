@@ -35,30 +35,54 @@ upstream: ## Clone the two upstream branches into upstream/ and apply patches/
 
 .PHONY: apply-patches
 apply-patches: ## Apply every patch in patches/ to the upstream clones
+	@$(MAKE) --no-print-directory _apply DIR=upstream/symfony-ai PATCHES='patches/mcp-bundle/*.patch'
+	@$(MAKE) --no-print-directory _apply DIR=upstream/php-sdk    PATCHES='patches/php-sdk/*.patch'
+
+# "already applied" and "no longer applies" look the same to `git apply --check`,
+# and treating them the same is how a moved upstream branch slips through: the
+# setup reports success and the failure surfaces much later, somewhere else.
+# Reverse-checking tells them apart.
+.PHONY: _apply
+_apply:
 	@set -e; \
-	for patch in patches/mcp-bundle/*.patch; do \
+	for patch in $(PATCHES); do \
 		[ -e "$$patch" ] || continue; \
-		if git -C upstream/symfony-ai apply --check "$(CURDIR)/$$patch" 2>/dev/null; then \
-			git -C upstream/symfony-ai apply "$(CURDIR)/$$patch"; echo "applied  $$patch"; \
+		if git -C $(DIR) apply --check "$(CURDIR)/$$patch" 2>/dev/null; then \
+			git -C $(DIR) apply "$(CURDIR)/$$patch"; echo "applied   $$patch"; \
+		elif git -C $(DIR) apply --check --reverse "$(CURDIR)/$$patch" 2>/dev/null; then \
+			echo "in place  $$patch"; \
 		else \
-			echo "skipped  $$patch (already applied or conflicting)"; \
+			echo "FAILED    $$patch"; \
+			echo; \
+			echo "  It applies neither forwards nor in reverse, so $(DIR) has moved"; \
+			echo "  underneath it. Re-derive the patch against the current tip and"; \
+			echo "  update docs/patches.md. See CLAUDE.md."; \
+			git -C $(DIR) apply --check -v "$(CURDIR)/$$patch" 2>&1 | sed 's/^/  /' | head -20; \
+			exit 1; \
 		fi; \
-	done; \
-	for patch in patches/php-sdk/*.patch; do \
-		[ -e "$$patch" ] || continue; \
-		if git -C upstream/php-sdk apply --check "$(CURDIR)/$$patch" 2>/dev/null; then \
-			git -C upstream/php-sdk apply "$(CURDIR)/$$patch"; echo "applied  $$patch"; \
+	done
+
+.PHONY: upstream-check
+upstream-check: ## Fail if either upstream branch has moved past the local clone
+	@set -e; \
+	git -C upstream/php-sdk    fetch -q origin $(SDK_REF); \
+	git -C upstream/symfony-ai fetch -q origin $(BUNDLE_REF); \
+	for entry in "php-sdk:$(SDK_REF)" "symfony-ai:$(BUNDLE_REF)"; do \
+		dir=upstream/$${entry%%:*}; ref=$${entry##*:}; \
+		local_sha=$$(git -C $$dir rev-parse HEAD); \
+		remote_sha=$$(git -C $$dir rev-parse FETCH_HEAD); \
+		if [ "$$local_sha" = "$$remote_sha" ]; then \
+			printf 'up to date  %-28s %s\n' "$$dir" "$$(git -C $$dir rev-parse --short HEAD)"; \
 		else \
-			echo "skipped  $$patch (already applied or conflicting)"; \
+			printf 'MOVED       %-28s %s -> %s\n' "$$dir" "$$(git -C $$dir rev-parse --short HEAD)" "$$(git -C $$dir rev-parse --short FETCH_HEAD)"; \
+			echo "  Re-derive the patches against the new tip before tagging."; \
+			exit 1; \
 		fi; \
 	done
 
 .PHONY: export-patches
-export-patches: ## Rewrite patches/ from the current state of the upstream clones
-	@mkdir -p patches/mcp-bundle patches/php-sdk
-	@git -C upstream/symfony-ai diff > patches/mcp-bundle/local.patch || true
-	@git -C upstream/php-sdk diff > patches/php-sdk/local.patch || true
-	@echo "Wrote patches/*/local.patch — split and name them before committing."
+export-patches: ## Re-split patches/ from upstream/symfony-ai, verified against a clean clone
+	@bin/export-patches
 
 .PHONY: install
 install: ## composer install (needs upstream/ to exist first)
@@ -71,8 +95,11 @@ setup: install db ## Full first-run setup
 db: ## Recreate and seed the dev, test and prod databases
 	$(CONSOLE) app:seed
 	APP_ENV=test $(CONSOLE) app:seed
+	# prod never rebuilds its container on a file change, so seeding with the one
+	# left over from before the last edit fails on any changed constructor. Clear
+	# first — cache:clear warms as it goes, which is what a host needs anyway.
+	APP_ENV=prod $(CONSOLE) cache:clear
 	APP_ENV=prod $(CONSOLE) app:seed
-	APP_ENV=prod $(CONSOLE) cache:warmup
 
 # -- running -----------------------------------------------------------------
 
@@ -127,7 +154,9 @@ inspector-stdio: ## Open the Inspector UI against a STDIO server (no web server 
 .PHONY: inspector-cli
 inspector-cli: ## One Inspector CLI call, e.g. make inspector-cli ARGS='--method tools/list'
 	@test -n "$(ARGS)" || { echo "Pass ARGS, e.g. ARGS='--method tools/list'"; exit 1; }
-	$(INSPECTOR) --cli $(inspector_url) --transport http $(inspector_header) $(ARGS)
+	@# Silent, so stdout is the server's JSON and nothing else — this target is
+	@# meant to be piped into jq.
+	@$(INSPECTOR) --cli $(inspector_url) --transport http $(inspector_header) $(ARGS)
 
 .PHONY: inspector-tour
 inspector-tour: ## Walk the whole MCP surface through the Inspector CLI, over HTTP

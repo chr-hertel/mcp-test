@@ -57,6 +57,19 @@ clones are disposable, the patches are the artefact:
 
 A patch that leaves an upstream suite red is not finished.
 
+**When a branch moves under you** (`make upstream-check` says `MOVED`, or
+`make apply-patches` says `FAILED`):
+
+1. `git -C upstream/<clone> fetch origin <ref> && git -C upstream/<clone> reset --hard FETCH_HEAD`
+2. re-apply the series; the ones that still fit will, the rest you re-derive by
+   hand against the new tip
+3. run that repository's own suite, then `make check`
+4. re-export and verify the series against a pristine clone of the **new** tip
+5. note the move in `docs/patches.md` if it changed anything semantic
+
+Do not pin the clone to an old SHA to make a patch fit. The demo exists to track
+the branches; a patch that no longer applies is the finding.
+
 If a behaviour is arguable rather than broken, do **not** patch it. Pin it with
 a regression check so a future change is visible, and record it under
 *Not patched, but worth knowing* in `docs/patches.md`.

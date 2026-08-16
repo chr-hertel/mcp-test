@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""
+Split the working changes in upstream/symfony-ai into the named patch series,
+then prove the result is right by applying it to a pristine clone and running
+that repository's own test suite there.
+
+The proving is the point. An earlier version of this only checked that the
+re-exported series reproduced the working tree byte for byte — which it did,
+while the working tree was missing a `use` statement a hunk-classifier had
+dropped. The series applied, compiled, and was semantically broken; nothing
+noticed until the demo's own regression suite failed two phases later.
+
+A structural check can only tell you the patches match the tree you have. Only
+running the tests tells you the tree is worth matching.
+
+    bin/export-patches            # split, verify, write
+    bin/export-patches --dry-run  # split and verify, write nothing
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+CLONE = ROOT / "upstream/symfony-ai"
+PATCH_DIR = ROOT / "patches/mcp-bundle"
+REPO_URL = "https://github.com/chr-hertel/ai.git"
+BRANCH = "mcp-bundle-servers-and-clients"
+
+# Which patch a change belongs to. Markers must be unique to one feature: a
+# contiguous block matching two patches is rejected rather than guessed at,
+# because guessing is what lost a hunk and shipped a half-applied series.
+PATCHES = [
+    (
+        "0001-client-roots-option.patch",
+        ["ListRootsRequestHandler", "['roots']", "'roots'", "roots/list"],
+    ),
+    (
+        "0002-connection-complete-and-protocol-version.patch",
+        ["CompletionCompleteResult", "sendRootsListChanged", "getProtocolVersion", "PromptReference"],
+    ),
+    (
+        "0003-client-target-alias.patch",
+        ["registerAliasForArgument"],
+    ),
+    (
+        "0004-container-backed-completion-providers.patch",
+        ["mcp.completion_provider", "CompletionProviderInterface", "completionProviders"],
+    ),
+]
+
+# When a file belongs wholly to one patch, say so rather than relying on markers.
+FILE_OWNER = {
+    "src/mcp-bundle/src/Client/ServerConnection.php": "0002-connection-complete-and-protocol-version.patch",
+    "src/mcp-bundle/src/Client/ServerConnectionInterface.php": "0002-connection-complete-and-protocol-version.patch",
+    "src/mcp-bundle/config/options.php": "0001-client-roots-option.patch",
+    "src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php": "0001-client-roots-option.patch",
+    "src/mcp-bundle/tests/DependencyInjection/McpPassTest.php": "0004-container-backed-completion-providers.patch",
+    "src/mcp-bundle/src/DependencyInjection/McpPass.php": "0004-container-backed-completion-providers.patch",
+}
+
+
+def git(*args: str, cwd: pathlib.Path = CLONE, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, check=False
+    )
+    if check and result.returncode != 0:
+        sys.exit(f"git {' '.join(args)} failed:\n{result.stderr}")
+    return result.stdout
+
+
+def split_hunks(diff: str) -> tuple[str, list[str]]:
+    lines = diff.split("\n")
+    first = next(i for i, line in enumerate(lines) if line.startswith("@@"))
+    header = "\n".join(lines[:first])
+
+    hunks: list[list[str]] = []
+    for line in lines[first:]:
+        if line.startswith("@@"):
+            hunks.append([line])
+        elif hunks:
+            hunks[-1].append(line)
+
+    return header, ["\n".join(h) for h in hunks]
+
+
+def owner_of_line(line: str) -> str | None:
+    """The patch one changed line belongs to."""
+    for name, markers in PATCHES:
+        if any(marker in line for marker in markers):
+            return name
+
+    return None
+
+
+def split_by_owner(path: str, hunk: str) -> dict[str, str]:
+    """
+    One hunk in, one hunk per owning patch out.
+
+    Git merges changes that sit within a few lines of each other into a single
+    hunk. In an import block that routinely puts two features together — which is
+    how an earlier classifier, picking the first marker it saw, dropped the other
+    feature's line on the floor. So instead of choosing, split: each patch gets a
+    hunk with the full context and only its own changed lines.
+
+    Ownership is decided per *run* of consecutive changed lines, not per line, so
+    a comment introducing a block belongs to the block it introduces.
+    """
+    if path in FILE_OWNER:
+        return {FILE_OWNER[path]: hunk}
+
+    lines = hunk.split("\n")
+    header, body = lines[0], lines[1:]
+
+    # index -> owner, for every changed line, via the run it belongs to
+    owner_at: dict[int, str] = {}
+    run: list[int] = []
+
+    def close(run: list[int]) -> None:
+        if not run:
+            return
+
+        found = {
+            name
+            for name, markers in PATCHES
+            if any(marker in body[i] for i in run for marker in markers)
+        }
+
+        if not found:
+            # A run with no marker of its own — a comment introducing the block
+            # below it, most often. Leave it unassigned; it inherits from its
+            # neighbour once every run is known. What must never happen is for it
+            # to be dropped, so it is recorded either way.
+            for i in run:
+                owner_at[i] = None
+
+            return
+
+        if len(found) > 1:
+            block = "\n".join(body[i] for i in run)
+            sys.exit(
+                f"Ambiguous change in {path} — one contiguous block carries "
+                f"{', '.join(sorted(found))}. Separate them so each block belongs to "
+                f"one patch, then re-run:\n\n{block[:600]}"
+            )
+
+        owner = found.pop()
+        for i in run:
+            owner_at[i] = owner
+
+    for i, line in enumerate(body):
+        if line[:1] in "+-":
+            run.append(i)
+        else:
+            close(run)
+            run = []
+    close(run)
+
+    # Unassigned runs inherit from the nearest assigned one, looking forward
+    # first: a comment sits above the code it explains.
+    ordered = sorted(owner_at)
+    for position, index in enumerate(ordered):
+        if owner_at[index] is not None:
+            continue
+
+        following = next((owner_at[j] for j in ordered[position + 1:] if owner_at[j]), None)
+        preceding = next((owner_at[j] for j in reversed(ordered[:position]) if owner_at[j]), None)
+        inherited = following or preceding
+
+        if inherited is None:
+            sys.exit(
+                f"Unclassified change in {path} — the hunk matches no patch's markers "
+                f"at all, and silently dropping it is how a series ends up "
+                f"half-applied:\n\n{hunk[:600]}"
+            )
+
+        owner_at[index] = inherited
+
+    owners = set(owner_at.values())
+    if len(owners) <= 1:
+        return {owners.pop(): hunk} if owners else {}
+
+    match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)", header)
+    if match is None:
+        sys.exit(f"Cannot parse hunk header in {path}: {header}")
+
+    old_start, new_start, trailer = int(match.group(1)), int(match.group(2)), match.group(3)
+
+    # The patches are applied in series, so each one sees the file as the ones
+    # before it left it. A line another patch adds is therefore context if that
+    # patch comes first, and absent if it comes later — getting this wrong is why
+    # a naively split hunk applies on its own but not in sequence.
+    order = {name: position for position, (name, _) in enumerate(PATCHES)}
+
+    out = {}
+    for owner in owners:
+        kept: list[str] = []
+
+        for i, line in enumerate(body):
+            mark, rest = line[:1], line[1:]
+
+            if mark not in "+-":
+                kept.append(line)
+                continue
+
+            line_owner = owner_at.get(i)
+            if line_owner == owner:
+                kept.append(line)
+                continue
+
+            earlier = order[line_owner] < order[owner]
+
+            if mark == "+" and earlier:
+                kept.append(" " + rest)   # already added by then
+            elif mark == "-" and not earlier:
+                kept.append(" " + rest)   # not removed yet
+
+        old_count = sum(1 for l in kept if l[:1] in " -" or l == "")
+        new_count = sum(1 for l in kept if l[:1] in " +" or l == "")
+        out[owner] = "\n".join(
+            [f"@@ -{old_start},{old_count} +{new_start},{new_count} @@{trailer}", *kept]
+        )
+
+    return out
+
+
+def build() -> dict[str, str]:
+    """The four patch bodies, keyed by file name."""
+    paths = git("diff", "--name-only").split()
+    if not paths:
+        sys.exit("upstream/symfony-ai has no working changes to export.")
+
+    per_patch: dict[str, collections.OrderedDict] = {
+        name: collections.OrderedDict() for name, _ in PATCHES
+    }
+
+    for path in paths:
+        diff = git("diff", "--", path)
+        if not diff.strip():
+            continue
+
+        header, hunks = split_hunks(diff)
+        for hunk in hunks:
+            for owner, piece in split_by_owner(path, hunk).items():
+                per_patch[owner].setdefault((path, header), []).append(piece)
+
+    bodies = {}
+    for name, by_file in per_patch.items():
+        if not by_file:
+            sys.exit(f"{name} came out empty — the split lost every hunk it owns.")
+
+        out: list[str] = []
+        for (_, header), hunks in by_file.items():
+            out.append(header)
+            out.extend(hunks)
+
+        body = "\n".join(out)
+        bodies[name] = body if body.endswith("\n") else body + "\n"
+
+    return bodies
+
+
+def prose(name: str) -> str:
+    """The explanation at the top of the existing patch file, which we keep."""
+    existing = PATCH_DIR / name
+    if not existing.exists():
+        sys.exit(f"{name} does not exist yet; write its explanation first.")
+
+    return existing.read_text().split("diff --git")[0].rstrip("\n")
+
+
+def verify(bodies: dict[str, str]) -> None:
+    """Apply the series to a pristine clone and run the bundle's own suite there."""
+    workdir = pathlib.Path(tempfile.mkdtemp(prefix="export-patches-"))
+    clone = workdir / "ai"
+
+    try:
+        print(f"  cloning {BRANCH}…")
+        subprocess.run(
+            ["git", "clone", "--quiet", "--branch", BRANCH, REPO_URL, str(clone)],
+            check=True,
+        )
+
+        tip = git("rev-parse", "--short", "HEAD", cwd=clone).strip()
+        local = git("rev-parse", "--short", "HEAD").strip()
+        if tip != local:
+            sys.exit(
+                f"  The branch tip ({tip}) is not what upstream/symfony-ai is on ({local}).\n"
+                f"  Rebase the clone first — see CLAUDE.md."
+            )
+
+        for name, _ in PATCHES:
+            patch = workdir / name
+            patch.write_text(prose(name) + "\n\n" + bodies[name])
+            result = subprocess.run(
+                ["git", "apply", str(patch)], cwd=clone, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                sys.exit(f"  {name} does not apply to a pristine {tip}:\n{result.stderr}")
+            print(f"  applied  {name}")
+
+        # Structural: the series reproduces the tree we exported from.
+        if git("diff", cwd=clone) != git("diff"):
+            sys.exit("  The series does not reproduce upstream/symfony-ai's working tree.")
+        print("  the series reproduces the working tree")
+
+        # Semantic: that tree actually works. This is the check that matters.
+        bundle = clone / "src/mcp-bundle"
+        print("  installing the bundle's dependencies…")
+        subprocess.run(
+            ["composer", "install", "--no-interaction", "--no-progress", "--quiet"],
+            cwd=bundle, check=True,
+        )
+        print("  running the bundle's test suite…")
+        result = subprocess.run(
+            ["vendor/bin/phpunit"], cwd=bundle, capture_output=True, text=True
+        )
+        tail = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        if result.returncode != 0:
+            sys.exit(f"  the bundle's suite fails with this series applied:\n{result.stdout[-2000:]}")
+        print(f"  {tail}")
+
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true", help="verify but do not write")
+    args = parser.parse_args()
+
+    print("Splitting the working changes…")
+    bodies = build()
+    for name, _ in PATCHES:
+        hunks = bodies[name].count("\n@@") + bodies[name].startswith("@@")
+        files = bodies[name].count("diff --git")
+        print(f"  {name}: {files} file(s)")
+
+    print("Verifying against a pristine clone…")
+    verify(bodies)
+
+    if args.dry_run:
+        print("Dry run: nothing written.")
+        return
+
+    for name, _ in PATCHES:
+        (PATCH_DIR / name).write_text(prose(name) + "\n\n" + bodies[name])
+    print(f"Wrote {len(bodies)} patches to {PATCH_DIR.relative_to(ROOT)}/")
+
+
+if __name__ == "__main__":
+    main()

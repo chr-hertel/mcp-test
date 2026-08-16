@@ -59,17 +59,22 @@ Nothing below this line is worth doing if these are red.
   These run the *upstream* suites against the patched clones. A failure here
   means a patch broke something, not that the demo did.
 
-- [ ] The patch series still applies to the branches it targets:
+- [ ] `make upstream-check` → `up to date` for both clones
 
-  ```console
-  $ for p in patches/mcp-bundle/*.patch; do
-        git -C upstream/symfony-ai apply --check --reverse "$PWD/$p" \
-          && echo "ok      $p" || echo "MOVED   $p"
-    done
-  ```
+  This fetches and compares against the branch tips. It is the one check here
+  that talks to the network, and it has to: everything else in this phase runs
+  against the clone you already have, so a branch that moved this morning looks
+  perfectly green until phase 7.
 
-  Every line `ok`. A `MOVED` line means upstream changed underneath a patch —
-  re-derive it and update `docs/patches.md` before tagging.
+  A `MOVED` line means the branch advanced. Re-derive the patches against the new
+  tip, re-run the upstream suites, re-export, and update `docs/patches.md` —
+  `CLAUDE.md` has the procedure.
+
+- [ ] `make apply-patches` → `in place` for all four
+
+  `in place` means the patch is already in the clone. `applied` is normal on a
+  fresh clone. **`FAILED` is fatal** and stops the target: the patch applies
+  neither forwards nor in reverse, so upstream moved underneath it.
 
 > The counts move whenever a check is added. If they are off by a few but
 > nothing failed, update this file rather than chasing it.
@@ -273,7 +278,9 @@ $ git -C upstream/symfony-ai rev-parse --short HEAD
 | Symptom | Look at |
 |---|---|
 | An HTTP round trip hangs forever | worker count — [`deployment.md`](deployment.md) §1 |
-| A patch reports `MOVED` | [`patches.md`](patches.md), then re-derive it |
+| `make upstream-check` says `MOVED` | the branch advanced — re-derive the patches, see `CLAUDE.md` |
+| `apply-patches` says `FAILED` | same cause, found later; the patch fits neither forwards nor back |
+| `app:seed` fails only in `prod` with `Too few arguments` | a stale prod container — `APP_ENV=prod bin/console cache:clear` |
 | A host shows garbled responses | something wrote to stdout — [`deployment.md`](deployment.md) §3 |
 | Counts are off but nothing failed | a check was added; update this file |
 | The Inspector CLI exits non-zero on a working call | `isError` does that — [`inspector.md`](inspector.md) |
