@@ -36,6 +36,11 @@ $ make inspector-cli ARGS='--method tools/call --tool-name search_talks --tool-a
 Reach for it when a single call is misbehaving — it prints the raw envelope.
 `docs/inspector.md` has the rest.
 
+Before tagging, work through `docs/release-checklist.md` — it covers what the
+automated suites cannot: a real host, a rendered app, and whether the setup
+instructions still work in a clean directory. Anything you add that changes a
+count or adds a scenario belongs in that file too.
+
 ## Changing the upstream libraries
 
 Edit the clones under `upstream/` directly, then keep `patches/` in sync — the

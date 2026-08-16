@@ -197,6 +197,15 @@ $ php bin/console app:mcp:regression                       # exercise everything
 people, with the MCP surface of every server introspected out of the running
 container.
 
+### All of it, in order
+
+[`docs/release-checklist.md`](docs/release-checklist.md) walks every scenario the
+demo is built to show, with the expected output at each step — the automated
+gates, the console, both halves of the Inspector, a real host, the browser, and a
+from-scratch reproduction. It is written to be re-run before tagging, and it is
+the only place the elicitation, sampling and roots round trips are exercised
+against a real model rather than a scripted handler.
+
 ---
 
 ## Using it from Claude Desktop
@@ -225,6 +234,7 @@ around, because the fix belongs upstream.
 |---|---|
 | [`docs/patches.md`](docs/patches.md) | what building this found in the upstream libraries, and the patches |
 | [`docs/claude-desktop.md`](docs/claude-desktop.md) | connecting a host, and what to ask it |
+| [`docs/release-checklist.md`](docs/release-checklist.md) | the manual walkthrough of every scenario, for before you tag |
 | [`docs/inspector.md`](docs/inspector.md) | driving the servers with the MCP Inspector, UI and CLI |
 | [`docs/deployment.md`](docs/deployment.md) | what MCP asks of a PHP process: workers, sessions, stdout |
 | [`docs/architecture.md`](docs/architecture.md) | how the pieces fit, and why they are arranged this way |
