@@ -28,7 +28,9 @@ mcp:
 
                 Everything here is read-only. Scheduling and CFP handling live on the separate
                 "organizer" server, which requires authentication.
-            pagination_limit: 25
+            # Deliberately below the number of tools, so this server actually
+            # paginates and the regression suite exercises cursor following.
+            pagination_limit: 5
             transports:
                 stdio: true    # for Claude Desktop, via `bin/console mcp:server conference`
                 http: true     # for the MCP Inspector and the regression suite

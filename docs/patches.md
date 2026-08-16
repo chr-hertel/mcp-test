@@ -152,6 +152,32 @@ sentence is wrong — a documentation fix rather than a patch.
 Anything that must not be reachable by a model needs a separate server (as
 `organizer` is here), not a visibility hint.
 
+### The bundle exposes about half of the SDK's server builder
+
+`Mcp\Server\Builder` grew a lot on the `2026spec-findings` branch. The bundle
+calls eleven of its methods; these have no configuration option and no other way
+in, so an application using the bundle cannot reach them at all:
+
+| Builder method | What it gates |
+|---|---|
+| `setProtocolVersion()` | pinning a revision — **and with it everything below**, since Tasks and the stateless lifecycle are `2026-07-28` features |
+| `buildStateless()` | the modern lifecycle: no `initialize`, no session, `server/discover` |
+| `setNotificationBus()` | `subscriptions/listen` delivery; PHP-FPM needs the PSR-16 bus, since publisher and stream are different workers |
+| `setResourceSubscriptionManager()`, `setSubscriptionLifetime()` | `resources/subscribe` |
+| `setCachePolicy()` | response caching |
+| `setLazyLoading()` | deferring element registration |
+| `enableExtension()` | any extension other than MCP Apps, which `McpAppPass` enables implicitly |
+
+The practical consequence for this demo: `probe_client` reports
+`tasks: false` on every connection, because the negotiated revision is
+`2025-11-25` and nothing can change that from configuration. Long-running tasks
+(SEP-2663) and resource subscriptions are therefore the two headline features of
+the SDK branch that are **not** demonstrated here — not because they do not work,
+but because the bundle has no seam to reach them through.
+
+The smallest useful addition would be `mcp.servers.<name>.protocol_version`,
+mirroring the option the client side already has.
+
 ### `session.store: cache` needs `psr/simple-cache`
 
 Choosing the cache-backed session store makes the bundle register

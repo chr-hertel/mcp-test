@@ -53,22 +53,53 @@ final class HttpTransportTest extends McpTestCase
         $this->assertSame('', trim((string) $response->getContent()));
     }
 
-    public function testToolsListIsServedOverTheTransport(): void
+    public function testToolsListPaginatesAndTheCursorReachesEverything(): void
     {
         $rpc = $this->rpc('/mcp');
         $rpc->initialize();
 
         $envelope = $rpc->request('tools/list');
-
         $this->assertArrayNotHasKey('error', $envelope, json_encode($envelope['error'] ?? []));
 
-        $names = array_column($envelope['result']['tools'], 'name');
+        // The conference server is configured with pagination_limit: 5 and has
+        // more tools than that, so the first page must be short and carry a cursor.
+        $this->assertCount(5, $envelope['result']['tools']);
+        $this->assertArrayHasKey('nextCursor', $envelope['result']);
+
+        $names = [];
+        $cursor = null;
+        $pages = 0;
+
+        do {
+            $page = $rpc->request('tools/list', null === $cursor ? [] : ['cursor' => $cursor]);
+            $this->assertArrayNotHasKey('error', $page, json_encode($page['error'] ?? []));
+
+            foreach ($page['result']['tools'] as $tool) {
+                $names[] = $tool['name'];
+                $this->assertSame('object', $tool['inputSchema']['type'], \sprintf('Tool "%s" has a non-object input schema.', $tool['name']));
+            }
+
+            $cursor = $page['result']['nextCursor'] ?? null;
+            ++$pages;
+        } while (null !== $cursor && $pages < 10);
+
+        $this->assertGreaterThan(1, $pages, 'The cursor was never followed.');
+        $this->assertSame($names, array_unique($names), 'A tool came back on two pages.');
+
         $this->assertContains('search_talks', $names);
         $this->assertContains('browse_schedule', $names);
+        // Registered at runtime by App\Mcp\Loader\HouseKeepingLoader.
+        $this->assertContains('get_venue_information', $names);
+    }
 
-        foreach ($envelope['result']['tools'] as $tool) {
-            $this->assertSame('object', $tool['inputSchema']['type'], \sprintf('Tool "%s" has a non-object input schema.', $tool['name']));
-        }
+    public function testAnInvalidCursorIsRefused(): void
+    {
+        $rpc = $this->rpc('/mcp');
+        $rpc->initialize();
+
+        $envelope = $rpc->request('tools/list', ['cursor' => 'not-a-cursor']);
+
+        $this->assertArrayHasKey('error', $envelope, 'A made-up cursor was accepted.');
     }
 
     public function testAToolCallCarriesBothTextAndStructuredContent(): void

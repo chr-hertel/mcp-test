@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Regression;
 
-use App\Service\ProgrammeSeeder;
 use App\Mcp\Client\ScriptedElicitationHandler;
 use App\Mcp\Client\ScriptedSamplingHandler;
+use App\Service\ProgrammeSeeder;
 use Mcp\Schema\Content\BlobResourceContents;
 use Mcp\Schema\Content\EmbeddedResource;
 use Mcp\Schema\Content\ImageContent;
@@ -165,10 +165,35 @@ final class RegressionRunner
                 throw new \RuntimeException('Following the cursor returned fewer tools than the first page.');
             }
 
-            return null === $firstPage->nextCursor
-                ? \sprintf('%d tool(s) in a single page', $paged)
-                : \sprintf('%d tool(s) across several pages', $paged);
+            if (null === $firstPage->nextCursor) {
+                return \sprintf('%d tool(s) in a single page', $paged);
+            }
+
+            if ($paged <= \count($firstPage->tools)) {
+                throw new \RuntimeException('The server offered a cursor but following it returned nothing new.');
+            }
+
+            $names = array_map(static fn ($tool): string => $tool->name, $connection->getTools());
+            if (\count($names) !== \count(array_unique($names))) {
+                throw new \RuntimeException('Following the cursor returned the same tool twice.');
+            }
+
+            return \sprintf('%d tool(s) across %d+ pages of %d', $paged, (int) ceil($paged / \count($firstPage->tools)), \count($firstPage->tools));
         });
+
+        if ($this->hasTool('get_venue_information')) {
+            $this->check('tools', 'a tool registered at runtime by a loader', function () use ($connection): string {
+                // Registered by App\Mcp\Loader\HouseKeepingLoader, not by an
+                // attribute — so it also proves loaders run on every server build.
+                $data = $this->structured($connection->callTool('get_venue_information'));
+
+                if (!isset($data['city'])) {
+                    throw new \RuntimeException('The loader-registered tool returned nothing useful.');
+                }
+
+                return \sprintf('%s in %s', $data['conference'], $data['city']);
+            });
+        }
 
         if (!$this->hasTool('search_talks')) {
             $this->results[] = CheckResult::skip('tools', 'tools/call', 'this server does not expose search_talks');
@@ -375,6 +400,23 @@ final class RegressionRunner
                 }
 
                 return \sprintf('%d bytes of image/png', \strlen($decoded));
+            });
+
+            $this->check('resources', 'a resource registered at runtime by a loader', function () use ($connection, $resources): string {
+                $uris = array_map(static fn ($resource): string => $resource->uri, $resources);
+
+                if (!\in_array('info://day/1', $uris, true)) {
+                    return 'skipped: this server exposes no loader-registered resources';
+                }
+
+                $result = $connection->readResource('info://day/1');
+                $contents = $result->contents[0] ?? null;
+
+                if (!$contents instanceof TextResourceContents || !str_contains($contents->text, 'Doors and registration')) {
+                    throw new \RuntimeException('info://day/1 did not come back as the expected Markdown.');
+                }
+
+                return \sprintf('%d byte(s) of %s', \strlen($contents->text), $contents->mimeType ?? 'no MIME type');
             });
 
             $this->check('resources', 'unknown URI is refused', function () use ($connection): string {

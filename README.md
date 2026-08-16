@@ -44,6 +44,9 @@ $ make serve         # http://127.0.0.1:8099
 | Resource templates — `talk://{slug}`, `speaker://{slug}`, `schedule://{day}`, `track://{track}` | [`ProgrammeResourceTemplates`](src/Mcp/Resource/ProgrammeResourceTemplates.php) |
 | Argument completion from the database | [`src/Mcp/Completion/`](src/Mcp/Completion) |
 | MCP Apps — a rendered screen, HTML over the wire, follow-up tools | [`ScheduleApp`](src/Mcp/App/ScheduleApp.php), [`templates/mcp/`](templates/mcp) |
+| Registering elements at runtime with a `LoaderInterface` | [`HouseKeepingLoader`](src/Mcp/Loader/HouseKeepingLoader.php) |
+| Listening to the SDK's capability-changed events | [`CapabilityAuditListener`](src/Mcp/Event/CapabilityAuditListener.php) |
+| Pagination — `conference` is configured below its own tool count on purpose | [`config/packages/mcp.yaml`](config/packages/mcp.yaml) |
 | Several servers with different capability sets, sessions and routes | [`config/packages/mcp.yaml`](config/packages/mcp.yaml) |
 | Access control on an MCP endpoint | [`OrganizerTokenAuthenticator`](src/Security/OrganizerTokenAuthenticator.php), [`security.yaml`](config/packages/security.yaml) |
 
@@ -148,6 +151,15 @@ prints the `mcpServers` fragment with absolute paths, plus what to do before
 connecting. Full walkthrough in [`docs/claude-desktop.md`](docs/claude-desktop.md).
 
 ---
+
+## What is *not* here
+
+Two headline features of the SDK branch are missing, and deliberately so: long-running
+**tasks** (SEP-2663) and **resource subscriptions**. Both need protocol revision
+`2026-07-28`, and `symfony/mcp-bundle` has no way to select a revision or to reach
+`setNotificationBus()` / `setResourceSubscriptionManager()` on the server builder.
+That gap is written up in [`docs/patches.md`](docs/patches.md) rather than worked
+around, because the fix belongs upstream.
 
 ## Documentation
 
