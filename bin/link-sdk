@@ -28,6 +28,8 @@ composer --working-dir="$bundle" --quiet --no-interaction update mcp/sdk
 # The repository entry has done its job once vendor/ points at the clone. Leaving
 # it in composer.json would put it in `git diff`, and from there into a patch —
 # which is the last place a local path belongs.
-git -C "$bundle" checkout -- composer.json composer.lock 2>/dev/null || true
+for f in composer.json composer.lock; do
+    git -C "$bundle" checkout -- "$f" 2>/dev/null || true
+done
 
 echo "linked $(basename "$bundle") -> $sdk"

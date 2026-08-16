@@ -12,15 +12,14 @@ Autoconfigures every service implementing the SDK's
 tag, and adds them to each server's locator keyed by class name and service id.
 
 diff --git a/src/mcp-bundle/src/DependencyInjection/McpPass.php b/src/mcp-bundle/src/DependencyInjection/McpPass.php
-index b32f8568..4def5c9e 100644
+index b32f8568..b65a3022 100644
 --- a/src/mcp-bundle/src/DependencyInjection/McpPass.php
 +++ b/src/mcp-bundle/src/DependencyInjection/McpPass.php
-@@ -166,11 +166,29 @@ final class McpPass implements CompilerPassInterface
+@@ -166,11 +166,28 @@ final class McpPass implements CompilerPassInterface
          /** @var array<string, array<string, array{template: string, meta: array<string, mixed>|null}>> $appTemplates */
          $appTemplates = $container->hasParameter('mcp.servers.app_tool_templates') ? $container->getParameter('mcp.servers.app_tool_templates') : [];
  
-+        // Completion providers are resolved by class name when a completion/complete request
-+        // arrives, not at compile time, so every server needs all of them in its locator.
++        // Resolved by class name at request time, so every server needs all of them.
 +        $completionProviders = [];
 +        foreach ($container->findTaggedServiceIds('mcp.completion_provider') as $serviceId => $tags) {
 +            $definition = $container->getDefinition($serviceId);
@@ -47,10 +46,10 @@ index b32f8568..4def5c9e 100644
              }
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..b537965e 100644
+index f6136243..4119c2f0 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -15,18 +15,19 @@ use Mcp\Capability\Attribute\McpPrompt;
+@@ -15,17 +15,18 @@ use Mcp\Capability\Attribute\McpPrompt;
  use Mcp\Capability\Attribute\McpResource;
  use Mcp\Capability\Attribute\McpResourceTemplate;
  use Mcp\Capability\Attribute\McpTool;
@@ -69,14 +68,12 @@ index f6136243..b537965e 100644
  use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
- use Mcp\Server\Builder;
-@@ -93,6 +104,12 @@ final class McpBundle extends AbstractBundle
+@@ -93,6 +104,11 @@ final class McpBundle extends AbstractBundle
          $builder->registerForAutoconfiguration(LoaderInterface::class)
              ->addTag('mcp.loader');
  
-+        // A #[CompletionProvider(provider: SomeProvider::class)] is resolved from the server's
-+        // container at request time. Tagging every provider service makes them reachable there,
-+        // so a provider can have constructor dependencies like any other service.
++        // Resolved from the server's container at request time, so a provider can
++        // have constructor dependencies like any other service.
 +        $builder->registerForAutoconfiguration(CompletionProviderInterface::class)
 +            ->addTag('mcp.completion_provider');
 +
@@ -84,7 +81,7 @@ index f6136243..b537965e 100644
              ->addTag('mcp.request_handler');
  
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
-index 3418ef43..a0b8ddc9 100644
+index 3418ef43..51ea3a8a 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
 @@ -15,6 +15,7 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -95,15 +92,13 @@ index 3418ef43..a0b8ddc9 100644
  use Mcp\Schema\Icon;
  use Mcp\Schema\ToolAnnotations;
  use PHPUnit\Framework\TestCase;
-@@ -196,6 +197,29 @@ final class McpPassTest extends TestCase
+@@ -196,6 +197,27 @@ final class McpPassTest extends TestCase
          $this->assertSame('app.time_tool', (string) $reference);
      }
  
 +    public function testCompletionProvidersJoinEveryServerLocator()
 +    {
-+        // A #[CompletionProvider(provider: ...)] is resolved by class name out of
-+        // the server's container when a completion/complete request arrives, so a
-+        // provider with constructor dependencies is only usable if it is in there.
++        // Resolved by class name out of the server's container at request time.
 +        $container = $this->containerWithBuilder(['default' => [], 'editors' => []]);
 +        $container->setDefinition(TimeTool::class, (new Definition(TimeTool::class))->addTag('mcp.tool', ['method' => 'getCurrentTime']));
 +        $container->setDefinition('app.completion', (new Definition(CityCompletionProvider::class))->addTag('mcp.completion_provider'));
@@ -125,7 +120,7 @@ index 3418ef43..a0b8ddc9 100644
      public function testThrowsWhenExplicitTagMethodDoesNotExist()
      {
          $container = $this->containerWithBuilder();
-@@ -406,6 +430,18 @@ class UserTemplate
+@@ -406,6 +428,18 @@ class UserTemplate
      }
  }
  

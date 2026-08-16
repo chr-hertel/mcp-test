@@ -49,7 +49,7 @@ Note for upstreaming: this depends on SDK surface that only exists on the
 `"mcp/sdk": "^0.7"` constraint has to move with it.
 
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
-index 3f140a1b..321a0a5e 100644
+index 3f140a1b..f9670485 100644
 --- a/src/mcp-bundle/config/options.php
 +++ b/src/mcp-bundle/config/options.php
 @@ -91,6 +91,71 @@ return static function (DefinitionConfigurator $configurator): void {
@@ -124,13 +124,12 @@ index 3f140a1b..321a0a5e 100644
                          ->arrayNode('session')
                              ->addDefaultsIfNotSet()
                              ->info('Session storage. Every server needs its own store: session ids are not namespaced by server, so a shared store makes a session minted on one server valid on the others.')
-@@ -114,6 +179,16 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -114,6 +179,15 @@ return static function (DefinitionConfigurator $configurator): void {
                              && [] === $v['resources'] && [] === $v['resource_templates'] && [] === $v['apps'])
                          ->thenInvalid('An MCP server must expose at least one of "tools", "prompts", "resources", "resource_templates" or "apps". Use ["*"] to expose every element of a kind.')
                      ->end()
 +                    ->validate()
-+                        // Protocol revision 2026-07-28 removed sessions and is HTTP-only; STDIO
-+                        // belongs to the handshake era, and there is no session to store.
++                        // 2026-07-28 is HTTP-only; STDIO belongs to the handshake era.
 +                        ->ifTrue(static fn (array $v): bool => 'stateless' === $v['lifecycle'] && $v['transports']['stdio'])
 +                        ->thenInvalid('A "stateless" server cannot be served over STDIO: the 2026-07-28 lifecycle is defined over HTTP. Set "transports.stdio" to false, or use a second server for STDIO.')
 +                    ->end()
@@ -212,10 +211,10 @@ index 00000000..abd4627d
 +}
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..b537965e 100644
+index f6136243..4119c2f0 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -15,19 +15,20 @@ use Mcp\Capability\Attribute\McpPrompt;
+@@ -15,18 +15,19 @@ use Mcp\Capability\Attribute\McpPrompt;
  use Mcp\Capability\Attribute\McpResource;
  use Mcp\Capability\Attribute\McpResourceTemplate;
  use Mcp\Capability\Attribute\McpTool;
@@ -231,11 +230,10 @@ index f6136243..b537965e 100644
  use Mcp\Client\Transport\HttpTransport;
  use Mcp\Client\Transport\StdioTransport;
  use Mcp\Schema\ClientCapabilities;
- use Mcp\Schema\Enum\ProtocolVersion;
 +use Mcp\Schema\Enum\CacheScope;
+ use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
- use Mcp\Server\Builder;
 @@ -34,6 +37,13 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
  use Mcp\Server\Session\FileSessionStore;
  use Mcp\Server\Session\InMemorySessionStore;
@@ -258,7 +256,7 @@ index f6136243..b537965e 100644
  use Symfony\AI\McpBundle\DependencyInjection\McpAppPass;
  use Symfony\AI\McpBundle\DependencyInjection\McpPass;
  use Symfony\AI\McpBundle\Exception\LogicException;
-@@ -315,7 +342,10 @@ final class McpBundle extends AbstractBundle
+@@ -315,7 +339,10 @@ final class McpBundle extends AbstractBundle
      {
          $registryId = \sprintf('mcp.server.%s.registry', $name);
          $builderId = \sprintf('mcp.server.%s.builder', $name);
@@ -270,7 +268,7 @@ index f6136243..b537965e 100644
  
          $container->register($registryId, Registry::class)
              ->setArguments([new Reference('event_dispatcher'), new Reference('logger')])
-@@ -334,7 +364,6 @@ final class McpBundle extends AbstractBundle
+@@ -334,7 +361,6 @@ final class McpBundle extends AbstractBundle
              ->addMethodCall('setInstructions', [$server['instructions']])
              ->addMethodCall('setEventDispatcher', [new Reference('event_dispatcher')])
              ->addMethodCall('setRegistry', [new Reference($registryId)])
@@ -278,7 +276,7 @@ index f6136243..b537965e 100644
              ->addMethodCall('addRequestHandlers', [new TaggedIteratorArgument('mcp.request_handler')])
              ->addMethodCall('addNotificationHandlers', [new TaggedIteratorArgument('mcp.notification_handler')])
              ->addMethodCall('addLoaders', [new TaggedIteratorArgument('mcp.loader')])
-@@ -342,10 +371,33 @@ final class McpBundle extends AbstractBundle
+@@ -342,10 +368,32 @@ final class McpBundle extends AbstractBundle
              ->addTag('mcp.server.builder', ['server' => $name])
              ->addTag('monolog.logger', ['channel' => 'mcp']);
  
@@ -294,8 +292,7 @@ index f6136243..b537965e 100644
 +        $this->configureModernLifecycle($name, $server, $builderId, $container);
 +
 +        if ($stateless) {
-+            // buildStateless() returns a dispatcher rather than a Server: there is
-+            // no connection to run, because there is no session to run it for.
++            // A dispatcher rather than a Server: there is no connection to run.
 +            $container->register('mcp.server.'.$name, StatelessProtocol::class)
 +                ->setFactory([new Reference($builderId), 'buildStateless'])
 +                ->setArguments([array_map(
@@ -315,7 +312,7 @@ index f6136243..b537965e 100644
  
          if (!$server['transports']['http']) {
              return;
-@@ -354,7 +406,10 @@ final class McpBundle extends AbstractBundle
+@@ -354,7 +402,10 @@ final class McpBundle extends AbstractBundle
          $container->register(\sprintf('mcp.server.%s.middleware_factory', $name), MiddlewareFactory::class)
              ->setArguments([$server['http']['allowed_hosts']]);
  
@@ -327,7 +324,7 @@ index f6136243..b537965e 100644
              ->setArguments([
                  new Reference('mcp.server.'.$name),
                  new Reference('mcp.psr_http_factory'),
-@@ -369,6 +424,109 @@ final class McpBundle extends AbstractBundle
+@@ -369,6 +420,109 @@ final class McpBundle extends AbstractBundle
              ->addTag('monolog.logger', ['channel' => 'mcp']);
      }
  
@@ -437,7 +434,7 @@ index f6136243..b537965e 100644
      /**
       * @param array<string, array<string, mixed>> $servers
       */
-@@ -487,6 +645,11 @@ final class McpBundle extends AbstractBundle
+@@ -487,6 +641,11 @@ final class McpBundle extends AbstractBundle
                  $paths[$path] = $name;
              }
  
@@ -451,7 +448,7 @@ index f6136243..b537965e 100644
                  'file' => 'file:'.($session['directory'] ?? '%kernel.cache_dir%/mcp-sessions/'.$name),
 
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
-index 49017294..34d5a5ed 100644
+index 49017294..cd30ac2c 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
 @@ -23,10 +23,15 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
@@ -470,8 +467,8 @@ index 49017294..34d5a5ed 100644
  use Symfony\AI\McpBundle\Exception\LogicException;
  use Symfony\AI\McpBundle\McpBundle;
  use Symfony\AI\McpBundle\Session\FrameworkSessionStore;
-@@ -506,6 +511,112 @@ class McpBundleTest extends TestCase
-         ));
+@@ -478,6 +483,111 @@ class McpBundleTest extends TestCase
+         $this->assertTrue($container->hasDefinition(McpAppRenderer::SERVICE_ID));
      }
  
 +    public function testTheHandshakeLifecycleIsTheDefault()
@@ -493,7 +490,6 @@ index 49017294..34d5a5ed 100644
 +        $this->assertSame(StatelessProtocol::class, $server->getClass());
 +        $this->assertSame('buildStateless', $server->getFactory()[1]);
 +
-+        // 2026-07-28 removed sessions; building a store for one would be dead wiring.
 +        $this->assertSame([], $this->callsNamed($container, 'setSession', 'modern'));
 +        $this->assertFalse($container->hasDefinition('mcp.server.modern.session.store'));
 +
@@ -546,7 +542,7 @@ index 49017294..34d5a5ed 100644
 +        $calls = $this->callsNamed($container, 'setCachePolicy', 'modern');
 +        $this->assertCount(1, $calls);
 +
-+        // The per-method override wraps the default, so the outermost call is withMethod().
++        // The override wraps the default, so the outermost call is withMethod().
 +        $policy = $calls[0][1][0];
 +        $this->assertSame('withMethod', $policy->getFactory()[1]);
 +        $this->assertSame('tools/list', $policy->getArgument(0));
@@ -581,5 +577,5 @@ index 49017294..34d5a5ed 100644
 +    }
 +
      /**
-      * @param array<string, mixed> $configuration
-      */
+      * Builds an "mcp" configuration from partial server definitions, defaulting each server to
+      * exposing every tool so the "at least one element list" validation is satisfied.

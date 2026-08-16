@@ -7,16 +7,14 @@ that example failed at compile time with "no such target exists".
 Registers both spellings.
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..b537965e 100644
+index f6136243..4119c2f0 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -163,7 +180,11 @@ final class McpBundle extends AbstractBundle
+@@ -163,7 +179,9 @@ final class McpBundle extends AbstractBundle
                  ->setArguments([$clientName, new Reference($locatorId)])
                  ->addTag('mcp.client', ['name' => $clientName]);
  
-+            // Both spellings: `McpClientInterface $researchClient` reads best in a
-+            // constructor, while `#[Target('research')]` is what the name in the
-+            // configuration file looks like — and is what the documentation shows.
++            // Both spellings; the documentation shows #[Target('research')].
              $container->registerAliasForArgument('mcp.client.'.$clientName, McpClientInterface::class, $clientName.' client');
 +            $container->registerAliasForArgument('mcp.client.'.$clientName, McpClientInterface::class, $clientName);
  
