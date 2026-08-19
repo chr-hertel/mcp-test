@@ -61,7 +61,7 @@ final class DiagnosticsTool
     /**
      * Report what the connected client says it can do.
      *
-     * @return array{protocol_version: string, roots: bool, sampling: bool, sampling_tools: bool, sampling_context: bool, elicitation: bool, elicitation_url: bool, tasks: bool}
+     * @return array{protocol_version: string, roots: bool, sampling: bool, sampling_tools: bool, sampling_context: bool, elicitation: bool, elicitation_url: bool}
      */
     #[McpTool(
         name: 'probe_client',
@@ -81,7 +81,6 @@ final class DiagnosticsTool
             'sampling_context' => $client->supportsSamplingContext(),
             'elicitation' => $client->supportsElicitation(),
             'elicitation_url' => $client->supportsElicitationUrl(),
-            'tasks' => $context->supportsTasks(),
         ];
     }
 

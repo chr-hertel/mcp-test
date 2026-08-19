@@ -157,7 +157,7 @@ $ make serve && make inspector-tour
 
 12. What the Inspector itself advertises
     probe_client, on the diagnostics server. Sampling and elicitation need an interactive client.
-    → protocol 2025-11-25 — roots=true, sampling=false, elicitation=false, tasks=false
+    → protocol 2025-11-25 — roots=true, sampling=false, elicitation=false
 
 ✓ 13 steps, all answered.
 ```

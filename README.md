@@ -14,7 +14,7 @@ page is MCP.
 
 The demo points its own client at its own servers. That is what makes
 `make regression` a real end-to-end check of both libraries rather than a set of
-mocks agreeing with each other, and it is how the four upstream problems in
+mocks agreeing with each other, and it is how the seven upstream problems in
 [`docs/patches.md`](docs/patches.md) were found.
 
 ```console
@@ -58,7 +58,7 @@ $ make serve         # http://127.0.0.1:8099
 | Answering `roots/list` | [`WorkspaceRootsProvider`](src/Mcp/Client/WorkspaceRootsProvider.php) |
 | Answering `sampling/createMessage` | [`ScriptedSamplingHandler`](src/Mcp/Client/ScriptedSamplingHandler.php) |
 | Answering `elicitation/create`, including decline and cancel | [`ScriptedElicitationHandler`](src/Mcp/Client/ScriptedElicitationHandler.php) |
-| Two clients with different capabilities against the same server | `regression` and `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| Three clients: different capabilities, and different protocol revisions | `regression`, `modern` and `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Driving a server from application code | [`RegressionRunner`](src/Mcp/Regression/RegressionRunner.php) |
 
 ### Protocol revision 2026-07-28
@@ -72,12 +72,16 @@ server-initiated requests.
 | A stateless server, mounted on `StatelessHttpTransport` | `modern` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Per-request protocol version, capabilities and trace context | [`ModernLifecycleTool::describeRequest()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | **MRTR** — returning the ask instead of sending it, with signed `requestState` | [`ModernLifecycleTool::submitProposal()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
-| **Tasks** (SEP-2663) — a durable handle instead of a held connection | [`ModernLifecycleTool::auditSchedule()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | Cache hints (`ttlMs` / `cacheScope`), which the revision requires | `cache:` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | `x-mcp-header` — an argument mirrored into `Mcp-Param-*` and checked | [`ModernLifecycleTool::searchTrack()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | Opt-in progress and logging on the request's own stream | [`ModernLifecycleTool::reindexProgramme()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | MCP Apps over the modern lifecycle | `apps:` on the `modern` server in [`mcp.yaml`](config/packages/mcp.yaml) |
-| A client for the revision, because the SDK has none | [`ModernClient`](src/Mcp/Modern/ModernClient.php) |
+| The SDK's client on the modern wire — one option, same API | `protocol_version` on the `modern` client in [`mcp.yaml`](config/packages/mcp.yaml) |
+| Subscriptions (SEP-2575) and the refusals a conforming client never triggers | [`ModernClient`](src/Mcp/Modern/ModernClient.php) |
+
+> **Tasks** (SEP-2663) used to be here too. The SDK branch carved it out into a
+> PR of its own, so the demo's tasks surface is parked until it lands —
+> [`docs/patches.md`](docs/patches.md) lists what to put back.
 
 Compare `submit_proposal` on the two servers: the handshake-era one calls
 `$gateway->elicit()` and blocks; the modern one returns an `InputRequiredResult`
@@ -134,7 +138,7 @@ what still works:
 
 ```console
 $ make regression-stdio        # spawns bin/console mcp:server itself; no web server
-$ make serve && make regression # adds the three HTTP connections and the 2026-07-28 one
+$ make serve && make regression # adds the four HTTP connections and the raw 2026-07-28 probes
 $ php bin/console app:mcp:regression organizer_stdio   # one connection, verbosely
 ```
 
@@ -160,7 +164,7 @@ The same checks run under PHPUnit, alongside three other angles:
 | [`HttpTransportTest`](tests/Functional/HttpTransportTest.php) | raw JSON-RPC: handshake, session ids, error codes, cross-server session replay |
 | [`GeneratedSchemaTest`](tests/Functional/GeneratedSchemaTest.php) | what the SDK makes of a PHP method signature |
 | [`StdioStreamPurityTest`](tests/Functional/StdioStreamPurityTest.php) | that nothing but JSON-RPC reaches stdout, even at `-vvv` |
-| [`ModernLifecycleTest`](tests/Functional/ModernLifecycleTest.php) | protocol revision 2026-07-28: discovery, MRTR, tasks, cache hints, what was removed |
+| [`ModernLifecycleTest`](tests/Functional/ModernLifecycleTest.php) | protocol revision 2026-07-28: discovery, MRTR, cache hints, what was removed |
 
 ```console
 $ make test          # 25 tests, no web server, no network
@@ -263,7 +267,7 @@ connecting. Full walkthrough in [`docs/claude-desktop.md`](docs/claude-desktop.m
 ## Layout
 
 ```
-config/packages/mcp.yaml     three servers, two clients — the centre of the demo
+config/packages/mcp.yaml     four servers, three clients — the centre of the demo
 src/Entity, src/Repository   the conference domain: ordinary Doctrine
 src/Mcp/Tool/                tools, split by which server exposes them
 src/Mcp/Prompt/              prompts

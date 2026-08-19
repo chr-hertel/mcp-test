@@ -58,6 +58,17 @@ final class RegressionRunner
 
     private bool $hasResourceTemplates = false;
 
+    /**
+     * Whether the connection negotiated a revision from the modern era, in
+     * which a handful of methods no longer exist.
+     *
+     * The runner adapts to the *server* everywhere else — a check whose subject
+     * is not exposed is skipped. This is the same rule one level down: a method
+     * the revision removed is not a missing feature, and calling it would only
+     * prove that the server implements the era it said it does.
+     */
+    private bool $modern = false;
+
     public function __construct(
         private readonly ScriptedElicitationHandler $elicitation,
     ) {
@@ -72,6 +83,7 @@ final class RegressionRunner
         $this->tools = [];
         $this->prompts = [];
         $this->hasResourceTemplates = false;
+        $this->modern = $connection->getProtocolVersion()?->isModern() ?? false;
 
         $this->checkLifecycle($connection);
         $this->checkTools($connection);
@@ -90,11 +102,17 @@ final class RegressionRunner
 
     private function checkLifecycle(ServerConnectionInterface $connection): void
     {
-        $this->check('lifecycle', 'ping', function () use ($connection): string {
-            $connection->ping();
+        if ($this->modern) {
+            // SEP-2577. Both are gone with the session they served: there is no
+            // connection to keep alive, and no session to hang a log level on.
+            $this->results[] = CheckResult::skip('lifecycle', 'ping', 'removed by 2026-07-28');
+        } else {
+            $this->check('lifecycle', 'ping', function () use ($connection): string {
+                $connection->ping();
 
-            return 'answered';
-        });
+                return 'answered';
+            });
+        }
 
         $this->check('lifecycle', 'server info', function () use ($connection): string {
             $info = $connection->getServerInfo();
@@ -129,11 +147,15 @@ final class RegressionRunner
             return \sprintf('%d characters', \strlen($instructions));
         });
 
-        $this->check('lifecycle', 'logging/setLevel', function () use ($connection): string {
-            $connection->setLoggingLevel(LoggingLevel::Info);
+        if ($this->modern) {
+            $this->results[] = CheckResult::skip('lifecycle', 'logging/setLevel', 'removed by 2026-07-28; the level rides on each request');
+        } else {
+            $this->check('lifecycle', 'logging/setLevel', function () use ($connection): string {
+                $connection->setLoggingLevel(LoggingLevel::Info);
 
-            return 'accepted';
-        });
+                return 'accepted';
+            });
+        }
     }
 
     // -- tools ---------------------------------------------------------------
@@ -659,7 +681,7 @@ final class RegressionRunner
                 $data = $this->structured($connection->callTool('probe_client'));
 
                 $advertised = array_keys(array_filter(
-                    array_intersect_key($data, array_flip(['roots', 'sampling', 'elicitation', 'tasks'])),
+                    array_intersect_key($data, array_flip(['roots', 'sampling', 'elicitation'])),
                     static fn (mixed $value): bool => true === $value,
                 ));
 

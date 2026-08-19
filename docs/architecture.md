@@ -62,22 +62,26 @@ A tool moves between servers by moving between namespaces, and the compiler pass
 fails the build if a prefix matches nothing. The alternative — listing classes
 one by one — drifts the first time someone adds a tool.
 
-**Three servers rather than one.** A single server with everything on it would
-demonstrate less and be less safe. Three shows that identity, transports,
-session storage, instructions and capability set are per server; that access
-control is a plain firewall against a stable path; and that a tool whose whole
-purpose is to fail (`fail_on_purpose`) can exist without a general-purpose host
-ever seeing it.
+**Four servers rather than one.** A single server with everything on it would
+demonstrate less and be less safe. Four shows that identity, transports,
+session storage, instructions, capability set and *protocol revision* are per
+server; that access control is a plain firewall against a stable path; and that
+a tool whose whole purpose is to fail (`fail_on_purpose`) can exist without a
+general-purpose host ever seeing it.
 
-**The client points back at the server.** Five connections, all to this same
-application: three over HTTP, two by spawning `bin/console mcp:server`. That is
+**The client points back at the server.** Six connections, all to this same
+application: four over HTTP, two by spawning `bin/console mcp:server`. That is
 what makes the regression suite an end-to-end check of both upstream libraries
-instead of a set of mocks agreeing with each other — and it is how the four
-problems in [`patches.md`](patches.md) surfaced.
+instead of a set of mocks agreeing with each other — and it is how the problems
+in [`patches.md`](patches.md) surfaced.
 
-The `minimal` client exists to prove the negative: it configures no roots,
-sampling or elicitation handler, so the same servers see a client that cannot do
-any of those, and the tools that need them have to degrade rather than fail.
+Three clients, because two things are configured per client rather than per
+connection. The revision is one: `modern` sets
+`protocol_version: '2026-07-28'`, which is the whole of what puts the SDK's
+client on the modern wire, and the same suite then runs over both eras. The
+handlers are the other: `minimal` configures no roots, sampling or elicitation
+handler, so the same servers see a client that cannot do any of those, and the
+tools that need them have to degrade rather than fail.
 
 ## The two ways to reach a server, and when to use which
 

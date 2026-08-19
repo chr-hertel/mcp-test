@@ -13,10 +13,10 @@ capability from it exactly as `sampling` and `elicitation` already do.
 handler behind it was never useful; `roots: 'App\...'` replaces it.
 
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
-index 3f140a1b..f9670485 100644
+index 3f140a1b..cec66911 100644
 --- a/src/mcp-bundle/config/options.php
 +++ b/src/mcp-bundle/config/options.php
-@@ -141,13 +215,16 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -141,13 +205,16 @@ return static function (DefinitionConfigurator $configurator): void {
                              ->defaultNull()
                          ->end()
                          ->arrayNode('capabilities')
@@ -37,7 +37,7 @@ index 3f140a1b..f9670485 100644
                              ->defaultNull()
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..4119c2f0 100644
+index f6136243..971e85ab 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
 @@ -15,16 +15,17 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -58,7 +58,7 @@ index f6136243..4119c2f0 100644
  use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
-@@ -231,9 +249,9 @@ final class McpBundle extends AbstractBundle
+@@ -231,9 +247,9 @@ final class McpBundle extends AbstractBundle
                  $client['client_info']['description'],
              ])
              ->addMethodCall('setCapabilities', [new Definition(ClientCapabilities::class, [
@@ -70,7 +70,7 @@ index f6136243..4119c2f0 100644
                  null !== $client['sampling'],
                  null !== $client['elicitation'],
              ])])
-@@ -251,6 +269,12 @@ final class McpBundle extends AbstractBundle
+@@ -251,6 +267,12 @@ final class McpBundle extends AbstractBundle
              ]);
          }
  

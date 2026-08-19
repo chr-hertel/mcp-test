@@ -997,11 +997,6 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             cache_pool?: string|Param, // PSR-16 service for the "cache" bus. Under PHP-FPM the publisher and the stream are different workers, so "memory" cannot reach them. // Default: "cache.mcp.notifications"
  *             lifetime?: float|Param, // Seconds a stream is held before the server closes it gracefully. 0 means until the client or the runtime ends it. // Default: 30.0
  *         },
- *         tasks?: array{ // The tasks extension (SEP-2663): a durable handle instead of a held-open connection.
- *             store?: "none"|"memory"|"cache"|Param, // Default: "none"
- *             cache_pool?: string|Param, // PSR-16 service for the "cache" store. The worker that creates a task is not the one polled for it, so "memory" only works in a single-process runtime. // Default: "cache.mcp.tasks"
- *             input_handler?: string|Param, // Service id implementing Mcp\Server\Task\TaskInputHandlerInterface, for answering a parked task. // Default: null
- *         },
  *         session?: array{ // Session storage. Every server needs its own store: session ids are not namespaced by server, so a shared store makes a session minted on one server valid on the others.
  *             store?: "file"|"memory"|"cache"|"framework"|Param, // Default: "file"
  *             directory?: string|Param, // Directory for the "file" store. Defaults to "%kernel.cache_dir%/mcp-sessions/<name>". // Default: null

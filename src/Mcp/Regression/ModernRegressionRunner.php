@@ -8,20 +8,26 @@ use App\Mcp\Modern\ModernClient;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * The regression suite for protocol revision 2026-07-28.
+ * The protocol-level probes for revision 2026-07-28.
  *
- * A separate runner from {@see RegressionRunner} because almost nothing is
- * shared: there is no handshake to perform, no session to keep, no
- * `ServerConnectionInterface` to drive — the bundle's client cannot reach this
- * revision at all, since the SDK's client downgrades to the newest handshake
- * version when configured with a modern one.
+ * {@see RegressionRunner} covers this revision too now: the `modern` client sets
+ * `protocol_version: '2026-07-28'` and the SDK's own client speaks it, so the
+ * same checks run over both eras and the suite proves the two agree.
  *
- * So this drives {@see ModernClient} over real HTTP and checks the things the
- * revision actually changed, rather than re-running the handshake-era checks
- * against a different endpoint.
+ * What that cannot prove is how the server answers a client that is *wrong*. A
+ * conforming client never omits the protocol version, never contradicts its own
+ * body in a header, never replays a `requestState` it edited — so the refusals
+ * the revision requires would go untested, and a server that stopped enforcing
+ * them would look perfectly healthy. This drives {@see ModernClient} instead,
+ * which sends whatever it is told to, and covers what only the wire shows:
+ * cache hints, the closing frames of a subscription, and the four methods the
+ * revision removed.
  */
 final class ModernRegressionRunner
 {
+    private const ACKNOWLEDGED_NOTIFICATION = 'notifications/subscriptions/acknowledged';
+    private const META_SUBSCRIPTION_ID = 'io.modelcontextprotocol/subscriptionId';
+
     /**
      * @var list<CheckResult>
      */
@@ -43,15 +49,15 @@ final class ModernRegressionRunner
             $endpoint,
             // Declaring elicitation is what allows the server to ask for input;
             // without it an InputRequiredResult would be -32021 instead.
-            capabilities: ['elicitation' => (object) [], 'extensions' => ['io.modelcontextprotocol/tasks' => (object) []]],
+            capabilities: ['elicitation' => (object) []],
         );
 
         $this->checkDiscovery($client);
         $this->checkLifecycle($client);
         $this->checkCaching($client);
         $this->checkNotifications($client);
+        $this->checkSubscriptions($client);
         $this->checkMultiRoundTrip($client, $endpoint);
-        $this->checkTasks($client);
         $this->checkHeaders($client, $endpoint);
         $this->checkApps($client);
         $this->checkRemovals($client);
@@ -73,16 +79,6 @@ final class ModernRegressionRunner
             $info = $result['_meta']['io.modelcontextprotocol/serverInfo'] ?? [];
 
             return \sprintf('%s %s, speaking %s', $info['name'] ?? '?', $info['version'] ?? '?', implode(', ', $result['supportedVersions']));
-        });
-
-        $this->check('discovery', 'the tasks extension is advertised', function () use ($client): string {
-            $extensions = $this->result($client->discover())['capabilities']['extensions'] ?? [];
-
-            if (!\array_key_exists('io.modelcontextprotocol/tasks', $extensions)) {
-                throw new \RuntimeException('The tasks extension is not advertised; is "tasks.store" configured?');
-            }
-
-            return implode(', ', array_keys($extensions));
         });
 
         $this->check('discovery', 'tools/list is served without a handshake', function () use ($client): string {
@@ -224,6 +220,137 @@ final class ModernRegressionRunner
         });
     }
 
+    // -- subscriptions -------------------------------------------------------
+
+    /**
+     * SEP-2575. `resources/subscribe` and the HTTP GET stream are both gone; a
+     * client that wants server-initiated notifications opens one stream of its
+     * own and names the types it will accept.
+     *
+     * The allow-list is the part worth pinning: a server MUST NOT send a type
+     * the client did not ask for, and an omitted field declines exactly as
+     * `false` does — so a filter that is read as a hint rather than as a
+     * contract looks like a working subscription right up until it delivers
+     * something the client cannot handle.
+     *
+     * Two streams for four checks, because a stream costs its whole configured
+     * lifetime here: the built-in web server hands the body over at close, so
+     * nothing can be asserted until the server lets go. See docs/deployment.md.
+     */
+    private function checkSubscriptions(ModernClient $client): void
+    {
+        $everything = [
+            'toolsListChanged' => true,
+            'promptsListChanged' => true,
+            'resourcesListChanged' => true,
+            'resourceSubscriptions' => ['conference://current'],
+        ];
+
+        $carried = [];
+
+        $this->check('subscriptions', 'the acknowledgment opens the stream, on the request\'s own id', function () use ($client, $everything, &$carried): string {
+            // The provocation is an ordinary request on a second connection:
+            // HouseKeepingLoader registers its elements on every server build, and
+            // the registry announces every registration. If that ever stops being
+            // true, this needs a real mutation to provoke — but the demo has no
+            // tool that changes the registry, so the notification would then be
+            // untestable rather than absent.
+            $carried = $client->listen('sub-demo', $everything, whileOpen: fn () => $client->request('tools/list'));
+
+            $this->acknowledgment($carried, 'sub-demo');
+
+            return \sprintf('%d frame(s), the acknowledgment first', \count($carried));
+        });
+
+        $this->check('subscriptions', 'the agreed set is everything the server advertises', function () use ($everything, &$carried): string {
+            $agreed = (array) ($this->acknowledgment($carried, 'sub-demo')['params']['notifications'] ?? []);
+            $declined = array_diff(array_keys($everything), array_keys($agreed));
+
+            // Every type asked for is advertised by this server, so every type
+            // asked for has to come back agreed.
+            if ([] !== $declined) {
+                throw new \RuntimeException(\sprintf(
+                    'The server declined %s, though server/discover advertises it.',
+                    implode(', ', $declined),
+                ));
+            }
+
+            return implode(', ', array_keys($agreed));
+        });
+
+        $this->check('subscriptions', 'a registry change reaches the stream, tagged with it', function () use (&$carried): string {
+            $delivered = array_values(array_filter(
+                \array_slice($carried, 1),
+                static fn (array $frame): bool => str_starts_with((string) ($frame['method'] ?? ''), 'notifications/'),
+            ));
+
+            if ([] === $delivered) {
+                throw new \RuntimeException('Nothing reached the stream, though the registry changed while it was open.');
+            }
+
+            foreach ($delivered as $frame) {
+                // Every notification on a subscription carries its id, so a
+                // client holding several of them knows which one spoke.
+                if ('sub-demo' !== ($frame['params']['_meta'][self::META_SUBSCRIPTION_ID] ?? null)) {
+                    throw new \RuntimeException(\sprintf(
+                        'A "%s" notification arrived untagged with the subscription it belongs to.',
+                        $frame['method'] ?? '(no method)',
+                    ));
+                }
+            }
+
+            return implode(', ', array_unique(array_column($delivered, 'method')));
+        });
+
+        $this->check('subscriptions', 'a type the client did not ask for is declined', function () use ($client): string {
+            $frames = $client->listen('sub-narrow', ['toolsListChanged' => true]);
+            $agreed = array_keys((array) ($this->acknowledgment($frames, 'sub-narrow')['params']['notifications'] ?? []));
+
+            if (['toolsListChanged'] !== $agreed) {
+                throw new \RuntimeException(\sprintf(
+                    'Asked for toolsListChanged alone and the server agreed to %s.',
+                    [] === $agreed ? 'nothing' : implode(', ', $agreed),
+                ));
+            }
+
+            return 'only toolsListChanged; the rest declined by omission';
+        });
+    }
+
+    /**
+     * The first frame of a stream, which the revision requires to be the
+     * acknowledgment and requires to precede every notification on it.
+     *
+     * @param list<array<string, mixed>> $frames
+     *
+     * @return array<string, mixed>
+     */
+    private function acknowledgment(array $frames, string $subscriptionId): array
+    {
+        $first = $frames[0] ?? throw new \RuntimeException('The stream carried nothing at all.');
+
+        if (self::ACKNOWLEDGED_NOTIFICATION !== ($first['method'] ?? null)) {
+            throw new \RuntimeException(\sprintf(
+                'The stream opened with "%s" rather than the acknowledgment.',
+                $first['method'] ?? '(no method)',
+            ));
+        }
+
+        $id = $first['params']['_meta'][self::META_SUBSCRIPTION_ID] ?? null;
+
+        // The subscription has no id of its own: it is the request's, so that a
+        // client can correlate without waiting to be told.
+        if ($subscriptionId !== $id) {
+            throw new \RuntimeException(\sprintf(
+                'The acknowledgment named subscription "%s", not the request\'s own id "%s".',
+                \is_scalar($id) ? $id : \gettype($id),
+                $subscriptionId,
+            ));
+        }
+
+        return $first;
+    }
+
     // -- multi round trip ----------------------------------------------------
 
     private function checkMultiRoundTrip(ModernClient $client, string $endpoint): void
@@ -259,7 +386,9 @@ final class ModernRegressionRunner
             if (true === ($second['isError'] ?? false)) {
                 throw new \RuntimeException('The second round failed: '.($second['content'][0]['text'] ?? ''));
             }
-            if ($title !== ($second['structuredContent']['title'] ?? null)) {
+            // Not from the arguments — the second round sent none. The title can
+            // only be here if it travelled out and back in the sealed state.
+            if ($title !== ($second['structuredContent']['proposal']['title'] ?? null)) {
                 throw new \RuntimeException('The title did not survive in the sealed requestState.');
             }
 
@@ -304,57 +433,6 @@ final class ModernRegressionRunner
             }
 
             return \sprintf('refused with %d', $envelope['error']['code']);
-        });
-    }
-
-    // -- tasks ---------------------------------------------------------------
-
-    private function checkTasks(ModernClient $client): void
-    {
-        $this->check('tasks', 'a tool hands back a durable handle', function () use ($client): string {
-            $created = $this->result($client->callTool('audit_schedule', ['depth' => 2]));
-
-            // A task result is flat — `resultType: "task"` beside the envelope —
-            // not a `task` member, which is what makes it distinguishable from a
-            // CallToolResult without looking at the tool.
-            if ('task' !== ($created['resultType'] ?? null)) {
-                throw new \RuntimeException(\sprintf('audit_schedule answered with "%s", not a task.', $created['resultType'] ?? 'no resultType'));
-            }
-
-            $taskId = $created['taskId'] ?? null;
-            if (null === $taskId) {
-                throw new \RuntimeException('The task result carried no taskId.');
-            }
-            if ('working' !== ($created['status'] ?? null)) {
-                throw new \RuntimeException('A freshly created task should be "working".');
-            }
-
-            $fetched = $this->result($client->request('tasks/get', ['taskId' => $taskId]));
-
-            if ($taskId !== ($fetched['taskId'] ?? null)) {
-                throw new \RuntimeException('tasks/get returned a different task.');
-            }
-            if ('completed' !== ($fetched['status'] ?? null)) {
-                throw new \RuntimeException(\sprintf('The task is "%s", not completed.', $fetched['status'] ?? 'unknown'));
-            }
-
-            return \sprintf('%s → %s', substr($taskId, 0, 8), $fetched['status']);
-        });
-
-        $this->check('tasks', 'the work runs inline for a client without the extension', function () use ($client): string {
-            $bare = $client->withoutCapabilities();
-            $envelope = $bare->callTool('audit_schedule', ['depth' => 1]);
-
-            if (isset($envelope['error'])) {
-                throw new \RuntimeException('A client without the tasks extension got an error instead of an answer.');
-            }
-
-            $result = $envelope['result'] ?? [];
-            if ('task' === ($result['resultType'] ?? null)) {
-                throw new \RuntimeException('A handle was sent to a client with no polling loop.');
-            }
-
-            return 'answered synchronously, as it must';
         });
     }
 
@@ -416,7 +494,7 @@ final class ModernRegressionRunner
 
     private function checkApps(ModernClient $client): void
     {
-        $this->check('apps', 'the extension is advertised alongside tasks', function () use ($client): string {
+        $this->check('apps', 'the UI extension is advertised', function () use ($client): string {
             $extensions = array_keys($this->result($client->discover())['capabilities']['extensions'] ?? []);
 
             if (!\in_array('io.modelcontextprotocol/ui', $extensions, true)) {

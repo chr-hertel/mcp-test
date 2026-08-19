@@ -17,11 +17,9 @@ use Mcp\Schema\Elicitation\StringSchemaDefinition;
 use Mcp\Schema\Enum\LoggingLevel;
 use Mcp\Schema\Request\ElicitRequest;
 use Mcp\Schema\Result\CallToolResult;
-use Mcp\Schema\Result\CreateTaskResult;
 use Mcp\Schema\Result\InputRequiredResult;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\RequestContext;
-use Mcp\Schema\Enum\TaskStatus;
 
 /**
  * What protocol revision 2026-07-28 changed, from a handler's point of view.
@@ -57,7 +55,7 @@ final class ModernLifecycleTool
      * session. Here it travels in every request's `_meta`, which is exactly what
      * makes the server stateless: any worker can answer any request.
      *
-     * @return array{protocol_version: string, era: string, client: array<string, mixed>, capabilities: array<string, bool>, trace: array<string, string>, tasks: bool}
+     * @return array{protocol_version: string, era: string, client: array<string, mixed>, capabilities: array<string, bool>, trace: array<string, string>}
      */
     #[McpTool(
         name: 'describe_request',
@@ -85,7 +83,6 @@ final class ModernLifecycleTool
                 'roots' => $gateway->supportsRoots(),
             ],
             'trace' => $context->getTraceContext(),
-            'tasks' => $context->supportsTasks(),
         ];
     }
 
@@ -139,13 +136,32 @@ final class ModernLifecycleTool
             );
         }
 
+        // The same envelope the handshake-era tool returns, so that one check can
+        // assert on both: the feature is what a caller sees, and it did not
+        // change with the revision — only the direction the question travels.
         if ($answer->isDeclined() || $answer->isCancelled()) {
-            return new CallToolResult([new TextContent('Nothing was submitted: the speaker details were not provided.')]);
+            $status = $answer->isDeclined() ? 'declined' : 'cancelled';
+
+            return new CallToolResult(
+                [new TextContent('Nothing was submitted: the speaker details were not provided.')],
+                structuredContent: [
+                    'status' => $status,
+                    'message' => \sprintf('The user %s the request for speaker details; nothing was submitted.', $status),
+                ],
+            );
         }
 
         $content = $answer->content ?? [];
         if ('accepted' !== ($content['consent'] ?? null)) {
-            return CallToolResult::error([new TextContent('The code of conduct was not accepted, so the proposal was not recorded.')]);
+            // ::error() takes no structured content, so the constructor it is.
+            return new CallToolResult(
+                [new TextContent('The code of conduct was not accepted, so the proposal was not recorded.')],
+                isError: true,
+                structuredContent: [
+                    'status' => 'rejected',
+                    'message' => 'The code of conduct was not accepted; nothing was submitted.',
+                ],
+            );
         }
 
         // Round two. The title and abstract come from the sealed state, not from
@@ -166,56 +182,14 @@ final class ModernLifecycleTool
 
         return new CallToolResult(
             [new TextContent(\sprintf('Proposal #%d recorded over two round trips.', $proposal->getId()))],
-            structuredContent: $this->presenter->proposal($proposal),
+            structuredContent: [
+                'status' => 'submitted',
+                'message' => \sprintf('Proposal #%d recorded over two round trips.', $proposal->getId()),
+                'proposal' => $this->presenter->proposal($proposal),
+            ],
         );
     }
 
-    /**
-     * Re-check the whole programme for scheduling conflicts.
-     *
-     * Long enough to be worth handing back a handle instead of holding the
-     * connection open — which is what SEP-2663 is for. A client that did not
-     * declare the extension has no polling loop, so the work runs inline for it
-     * rather than failing.
-     *
-     * @param int $depth how thoroughly to check; higher is slower
-     */
-    #[McpTool(
-        name: 'audit_schedule',
-        title: 'Audit the schedule',
-        description: 'Check the whole programme for conflicts. Returns a task handle when the client supports tasks.',
-        annotations: new ToolAnnotations(readOnlyHint: true, idempotentHint: true, openWorldHint: false),
-    )]
-    public function auditSchedule(
-        RequestContext $context,
-        #[Schema(minimum: 1, maximum: 5)]
-        int $depth = 2,
-    ): CreateTaskResult|array {
-        if (!$context->supportsTasks()) {
-            return $this->audit($depth);
-        }
-
-        $created = $context->createTask(ttlMs: 600_000, pollIntervalMs: 500);
-
-        // A real deployment queues this and a worker advances the task as it goes.
-        // The demo has no worker, so the answer is stored straight away — what is
-        // being demonstrated is that `tasks/get` finds it, and through which store.
-        //
-        // Completed, not failed: a tool that ran and reported a problem is
-        // `completed` with `isError` on its result. `failed` is for protocol-level
-        // errors, and Task refuses to be built the other way round.
-        $report = $this->audit($depth);
-        $context->getTaskStore()?->save($created->task->with(
-            TaskStatus::Completed,
-            new CallToolResult(
-                [new TextContent(json_encode($report, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES))],
-                structuredContent: $report,
-            ),
-            statusMessage: \sprintf('Checked %d talk(s).', $report['checked']),
-        ));
-
-        return $created;
-    }
 
     /**
      * Emit progress and log lines, both of which the client has to opt into.
@@ -278,28 +252,4 @@ final class ModernLifecycleTool
         ];
     }
 
-    /**
-     * @return array{checked: int, conflicts: list<string>, depth: int}
-     */
-    private function audit(int $depth): array
-    {
-        $talks = $this->talks->search(limit: 50);
-        $seen = [];
-        $conflicts = [];
-
-        foreach ($talks as $talk) {
-            $slot = $talk->getSlot();
-            if (null === $slot) {
-                continue;
-            }
-
-            $key = $slot->getRoom()->getName().'@'.$slot->getStartsAt()->format('c');
-            if (isset($seen[$key])) {
-                $conflicts[] = \sprintf('%s and %s share %s', $seen[$key], $talk->getTitle(), $key);
-            }
-            $seen[$key] = $talk->getTitle();
-        }
-
-        return ['checked' => \count($talks) * $depth, 'conflicts' => $conflicts, 'depth' => $depth];
-    }
 }

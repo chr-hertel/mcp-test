@@ -35,6 +35,11 @@ final class McpRegressionCommand extends Command
     public function __construct(
         #[Target('regression')]
         private readonly McpClientInterface $client,
+        // A second client only because the revision is a property of the client
+        // rather than of one server: `protocol_version: '2026-07-28'` puts the
+        // SDK's client on the modern wire, and the checks below cannot tell.
+        #[Target('modern')]
+        private readonly McpClientInterface $modernClient,
         private readonly RegressionRunner $runner,
         private readonly ModernRegressionRunner $modernRunner,
         private readonly string $modernEndpoint,
@@ -71,7 +76,7 @@ final class McpRegressionCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $io->title('MCP regression suite');
 
-        $connections = 'modern' === $input->getArgument('server') ? [] : $this->connections($input, $io);
+        $connections = $this->connections($input, $io);
 
         if ([] === $connections && !$this->shouldRunModern($input)) {
             $io->warning('No connection matched.');
@@ -114,10 +119,11 @@ final class McpRegressionCommand extends Command
         }
 
         if ($this->shouldRunModern($input)) {
-            $io->section('modern (2026-07-28)');
+            $io->section('2026-07-28 protocol probes');
 
-            // Not a connection of the "regression" client: the SDK's client cannot
-            // speak this revision, so the demo brings its own. See
+            // Not a connection of either client: what is checked here is what a
+            // conforming client never does — a missing version, a header that
+            // disagrees with the body, a tampered requestState. See
             // App\Mcp\Regression\ModernRegressionRunner.
             $results = $this->modernRunner->run($this->modernEndpoint);
             $this->render($io, $results, (bool) $input->getOption('quiet-passes'));
@@ -127,7 +133,7 @@ final class McpRegressionCommand extends Command
             $failed += $failedHere;
 
             $summary[] = [
-                'modern_http',
+                'modern (raw)',
                 (string) ($counts[CheckResult::PASS] ?? 0),
                 (string) ($counts[CheckResult::SKIP] ?? 0),
                 (string) $failedHere,
@@ -215,26 +221,40 @@ final class McpRegressionCommand extends Command
         $only = $input->getArgument('server');
         $transport = $input->getOption('transport');
 
-        if (null !== $only) {
-            if (!$this->client->has($only)) {
-                $io->error(\sprintf('Unknown server "%s". Configured: %s.', $only, implode(', ', $this->client->getServerNames())));
+        // "modern" is the 2026-07-28 surface rather than one connection: the
+        // suite over the modern wire, and then the protocol probes underneath it.
+        if ('modern' === $only) {
+            return iterator_to_array($this->modernClient);
+        }
 
-                return [];
+        if (null !== $only) {
+            foreach ([$this->client, $this->modernClient] as $client) {
+                if ($client->has($only)) {
+                    return [$only => $client->get($only)];
+                }
             }
 
-            return [$only => $this->client->get($only)];
+            $io->error(\sprintf(
+                'Unknown server "%s". Configured: %s.',
+                $only,
+                implode(', ', [...$this->client->getServerNames(), ...$this->modernClient->getServerNames()]),
+            ));
+
+            return [];
         }
 
         $connections = [];
 
-        foreach ($this->client as $name => $connection) {
-            // The transport is not introspectable from the connection, so the
-            // naming convention in config/packages/mcp.yaml is what we filter on.
-            if (null !== $transport && !str_ends_with($name, '_'.$transport)) {
-                continue;
-            }
+        foreach ([$this->client, $this->modernClient] as $client) {
+            foreach ($client as $name => $connection) {
+                // The transport is not introspectable from the connection, so the
+                // naming convention in config/packages/mcp.yaml is what we filter on.
+                if (null !== $transport && !str_ends_with($name, '_'.$transport)) {
+                    continue;
+                }
 
-            $connections[$name] = $connection;
+                $connections[$name] = $connection;
+            }
         }
 
         return $connections;

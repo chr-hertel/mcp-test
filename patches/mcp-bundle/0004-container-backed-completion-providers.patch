@@ -46,7 +46,7 @@ index b32f8568..b65a3022 100644
              }
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..4119c2f0 100644
+index f6136243..971e85ab 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
 @@ -15,17 +15,18 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -68,7 +68,7 @@ index f6136243..4119c2f0 100644
  use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
-@@ -93,6 +104,11 @@ final class McpBundle extends AbstractBundle
+@@ -93,6 +102,11 @@ final class McpBundle extends AbstractBundle
          $builder->registerForAutoconfiguration(LoaderInterface::class)
              ->addTag('mcp.loader');
  

@@ -43,9 +43,9 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **42 tests / 172 assertions OK**, then the STDIO regression:
+- [ ] `make check` → **66 tests / 232 assertions OK**, then the STDIO regression:
       `conference_stdio 35 passed`, `organizer_stdio 40 passed`, **0 failed**
-- [ ] `make serve` — then `make regression` → all five connections, **0 failed**
+- [ ] `make serve` — then `make regression` → all six connections plus the raw probes, **0 failed**
 
   | Connection | passed | skipped |
   |---|---|---|
@@ -54,9 +54,10 @@ Nothing below this line is worth doing if these are red.
   | `diagnostics_http` | 18 | 7 |
   | `conference_stdio` | 35 | 1 |
   | `organizer_stdio` | 40 | 1 |
-  | `modern_http` | 25 | 0 |
+  | `modern_http` | 35 | 3 |
+  | `modern (raw)` | 26 | 0 |
 
-- [ ] `make upstream-test` → `mcp/sdk` **1422 tests OK**, `symfony/mcp-bundle` **174 tests OK**
+- [ ] `make upstream-test` → `mcp/sdk` **1512 tests OK**, `symfony/mcp-bundle` **178 tests OK**
 
   These run the *upstream* suites against the patched clones. A failure here
   means a patch broke something, not that the demo did.
@@ -72,11 +73,20 @@ Nothing below this line is worth doing if these are red.
   tip, re-run the upstream suites, re-export, and update `docs/patches.md` —
   `CLAUDE.md` has the procedure.
 
-- [ ] `make apply-patches` → `in place` for all four
+- [ ] `make apply-patches` → `in place` or `overlaps` for all six, never `applied`
 
-  `in place` means the patch is already in the clone. `applied` is normal on a
-  fresh clone. **`FAILED` is fatal** and stops the target: the patch applies
-  neither forwards nor in reverse, so upstream moved underneath it.
+  `in place` means the patch is already in the clone, `applied` is normal on a
+  fresh clone but suspicious here, and `overlaps` means the question cannot be
+  answered for that patch: its lines are context a later patch rewrote, so it
+  reverse-applies only together with them. **`FAILED` is fatal** — nothing in
+  the series fits either way, so upstream moved underneath it.
+
+- [ ] `bin/export-patches --dry-run` → `the series reproduces the working tree`,
+      then the bundle's own suite green in the pristine clone
+
+  The authoritative version of the check above, and the only one that settles an
+  `overlaps`. It costs a clone and a `composer install`; the phase-1 gate does
+  not, which is why both are here.
 
 > The counts move whenever a check is added. If they are off by a few but
 > nothing failed, update this file rather than chasing it.
@@ -87,26 +97,27 @@ Nothing below this line is worth doing if these are red.
 
 What someone sees before they connect anything.
 
-- [ ] `make debug` (`debug:mcp`) — three servers:
+- [ ] `make debug` (`debug:mcp`) — four servers:
 
   | Server | tools | prompts | resources | templates |
   |---|---|---|---|---|
   | `conference` | 9 | 4 | 7 | 4 |
   | `organizer` | 16 | 4 | 7 | 4 |
   | `diagnostics` | 6 | — | 2 | — |
-  | `modern` | 14 | 4 | 7 | 4 |
+  | `modern` | 13 | 4 | 7 | 4 |
 
   and **no** *Not exposed by any server* section. If one appears, a class
   carries an MCP attribute that no capability list matches — usually a typo in a
   namespace prefix.
 
 - [ ] `php bin/console debug:mcp search_talks` — one element with its full input schema
-- [ ] `make clients` (`mcp:client:debug`) — `regression` with five servers, `minimal` with one
+- [ ] `make clients` (`mcp:client:debug`) — `regression` with five servers, `modern` and `minimal` with one each
 - [ ] `php bin/console mcp:client:debug regression conference_stdio` — connects, prints
       server info, the instructions block, and all four capability lists
 - [ ] `make claude-config` — absolute paths, the right PHP binary, `APP_ENV=prod`
-- [ ] `php bin/console debug:router | grep mcp` — three routes:
-      `_mcp_endpoint_conference`, `_mcp_endpoint_organizer`, `_mcp_endpoint_diagnostics`
+- [ ] `php bin/console debug:router | grep mcp` — four routes:
+      `_mcp_endpoint_conference`, `_mcp_endpoint_organizer`, `_mcp_endpoint_diagnostics`,
+      `_mcp_endpoint_modern`
 
 ---
 
@@ -133,10 +144,24 @@ The reference client, which knows nothing about this application.
 
 The reason the SDK branch exists. `make serve` first.
 
-- [ ] `make regression-2026` → **25 passed, 0 failed**, across nine groups:
-      discovery, lifecycle, caching, notifications, MRTR, tasks, headers, apps, removals
+- [ ] `make regression-2026` → `modern_http` **35 passed / 3 skipped**, then the
+      raw probes **26 passed**, **0 failed** either side
 
-- [ ] `server/discover` answers without a handshake, and advertises the tasks
+  Two runs over one revision. `modern_http` is the ordinary suite driven by the
+  SDK's own client with `protocol_version: '2026-07-28'` — the same checks as
+  every other connection, skipping `ping` and `logging/setLevel` because the
+  revision removed them. The raw probes are nine groups (discovery, lifecycle,
+  caching, notifications, subscriptions, MRTR, headers, apps, removals) driven by
+  `ModernClient`, which sends what a conforming client will not.
+
+  The subscriptions group takes about ten seconds of the run on its own: each
+  stream has to be waited out, because the built-in server delivers a body only
+  when it closes — [`deployment.md`](deployment.md) §3.
+
+- [ ] `php bin/console mcp:client:debug modern modern_http` — connects with no
+      `initialize` on the wire, and prints the server info and 13 tools
+
+- [ ] `server/discover` answers without a handshake, and advertises the MCP Apps
       extension:
 
   ```console
@@ -149,14 +174,32 @@ The reason the SDK branch exists. `make serve` first.
   ```
 
   Expected: `supportedVersions: ["2026-07-28"]`, `ttlMs: 3600000`,
-  `cacheScope: "public"`, and `io.modelcontextprotocol/tasks` under `extensions`.
+  `cacheScope: "public"`, and `io.modelcontextprotocol/ui` under `extensions`.
+  Not `io.modelcontextprotocol/tasks` — see *Tasks left the branch* in
+  [`patches.md`](patches.md).
 
 - [ ] No `Mcp-Session-Id` comes back from any call to `/mcp/2026`
 - [ ] The same tool, both eras: `submit_proposal` on `/mcp/organizer` blocks on an
       elicitation, and on `/mcp/2026` returns `resultType: "input_required"` with a
       signed `requestState`. Same feature, opposite direction.
 - [ ] A `GET` or `DELETE` on `/mcp/2026` answers **405** — there is no session to
-      open a stream on, and none to tear down.
+      open a stream on, and none to tear down. `subscriptions/listen` is what
+      replaced the GET stream:
+
+  ```console
+  $ curl -sSN -X POST http://127.0.0.1:8099/mcp/2026 \
+      -H 'Content-Type: application/json' -H 'Accept: text/event-stream' \
+      -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: subscriptions/listen' \
+      -d '{"jsonrpc":"2.0","id":"sub-1","method":"subscriptions/listen","params":{
+            "notifications":{"toolsListChanged":true},"_meta":{
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}}}}'
+  ```
+
+  Expected, five seconds later and all at once: an
+  `notifications/subscriptions/acknowledged` frame naming subscription `sub-1`
+  and agreeing to `toolsListChanged` alone, keep-alive comments, then a closing
+  result. Nothing arrives before the close — that is the server, not a hang.
 
 - [ ] In the Inspector UI, connect to `/mcp/2026` with version negotiation set to
       **Auto** or **Modern (2026-07-28, sessionless)** — the default is *Legacy*,
@@ -289,7 +332,7 @@ $ make check
 ```
 
 - [ ] Every step succeeds with no manual intervention
-- [ ] `make upstream` reports `applied` for all four patches, not `skipped`
+- [ ] `make upstream` reports `applied` for all six patches, not `skipped`
 - [ ] `make check` is green in the clone
 
 ---
@@ -323,7 +366,7 @@ $ git -C upstream/symfony-ai rev-parse --short HEAD
 | `make upstream-check` says `MOVED` | the branch advanced — re-derive the patches, see `CLAUDE.md` |
 | `apply-patches` says `FAILED` | same cause, found later; the patch fits neither forwards nor back |
 | `app:seed` fails only in `prod` with `Too few arguments` | a stale prod container — `APP_ENV=prod bin/console cache:clear` |
-| A host shows garbled responses | something wrote to stdout — [`deployment.md`](deployment.md) §3 |
+| A host shows garbled responses | something wrote to stdout — [`deployment.md`](deployment.md) §4 |
 | Counts are off but nothing failed | a check was added; update this file |
 | The Inspector CLI exits non-zero on a working call | `isError` does that — [`inspector.md`](inspector.md) |
 | A tool call times out on first use in a host | `dev` container compile; use `prod` |

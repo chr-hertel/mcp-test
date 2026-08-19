@@ -1,8 +1,8 @@
 # What MCP asks of a PHP process
 
 MCP was not designed around the request/response lifecycle PHP is built for.
-Most of it fits anyway, but four things do not fit by default, and each of them
-fails in a way that is hard to read from the outside. All four were hit while
+Most of it fits anyway, but five things do not fit by default, and each of them
+fails in a way that is hard to read from the outside. All five were hit while
 building this demo.
 
 ## 1. A server that talks back needs two workers
@@ -61,7 +61,39 @@ pins that a session minted on `/mcp` is refused by `/mcp/diagnostics`.
 > "CacheInterface" from namespace "Psr\SimpleCache"* — see
 > [`patches.md`](patches.md).
 
-## 3. On STDIO, stdout belongs to the protocol
+## 3. The built-in web server cannot stream
+
+`php -S` — and therefore `symfony server:start`, and therefore `make serve` —
+hands a response body to the client when the response *closes*, no matter what
+the application does in between. `echo` plus `flush()` per frame changes
+nothing; a five-line SSE script that ticks once a second delivers all five lines
+at the end, in one write.
+
+For a tool call that streams progress this is invisible: the response ends when
+the call does, and the notifications arrive with the result a moment later than
+they were sent. For `subscriptions/listen` it is not invisible at all — that
+stream is *meant* to outlive the thing it reports on. Held for its configured
+lifetime, it delivers everything at close:
+
+```console
+$ curl -N --trace-time -X POST .../mcp/2026 -H 'Mcp-Method: subscriptions/listen' …
+01:28:53.6 <= Recv header, 47 bytes      ← headers immediately
+01:29:09.5 <= Recv data, 1422 bytes      ← the acknowledgment, every keep-alive
+                                           and the closing frame, sixteen seconds
+                                           later, together
+```
+
+So a subscription cannot be *observed* working under the built-in server, only
+verified after the fact — which is why `subscriptions.lifetime` is five seconds
+in `config/packages/mcp.yaml` and why the regression suite waits each stream out
+rather than reading frames as they arrive. Under PHP-FPM, FrankenPHP or any SAPI
+that honours `flush()`, frames leave as they are written.
+
+Worth knowing before concluding that a stream is broken: headers arriving
+promptly and then nothing for the whole lifetime is what *working* looks like
+here.
+
+## 4. On STDIO, stdout belongs to the protocol
 
 `bin/console mcp:server <name>` reads JSON-RPC from stdin and writes it to
 stdout. Anything else on that stream corrupts the session, and the host reports
@@ -81,7 +113,7 @@ Server-side logging belongs on **stderr**, which the host captures and shows in
 its own logs. `LoggerInterface` in a tool does the right thing already; the
 `mcp` Monolog channel is where the SDK's own output goes.
 
-## 4. A long-running client must not carry a child process between messages
+## 5. A long-running client must not carry a child process between messages
 
 An MCP client with a STDIO transport spawns a child process on connect. In a
 Messenger worker or any long-running process, holding that child across messages

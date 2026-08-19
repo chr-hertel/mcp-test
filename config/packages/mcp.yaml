@@ -119,8 +119,7 @@ mcp:
 
                 There are no server-initiated requests here: `submit_proposal` returns the
                 question it needs answered and you call it again with the answer attached.
-                `audit_schedule` hands back a task handle rather than holding the connection
-                open. `describe_request` reports what your own request declared.
+                `describe_request` reports what your own request declared.
             lifecycle: stateless
             protocol_versions: ['2026-07-28']
             transports:
@@ -150,14 +149,18 @@ mcp:
             # subscriptions/listen replaces the HTTP GET stream. The cache-backed
             # bus is the one that works under PHP-FPM, where the publisher and the
             # process holding the stream open are different workers.
+            #
+            # Five seconds rather than the minute a deployment would want: the
+            # built-in web server hands a response over only when it closes, so
+            # every frame of a stream arrives at once at the end of it, and the
+            # regression suite has to wait each stream out. See docs/deployment.md.
             subscriptions:
                 bus: cache
-                lifetime: 15
+                lifetime: 5
 
-            # SEP-2663. Same reasoning for the store: the worker that creates a
-            # task is not the one polled for it.
-            tasks:
-                store: cache
+            # No `tasks:` here. The Tasks extension (SEP-2663) was carved out of
+            # the SDK branch into its own PR, so nothing on the tracked branch
+            # implements it — see docs/patches.md.
 
             tools:
                 - 'App\Mcp\Tool\Modern\'
@@ -218,7 +221,35 @@ mcp:
                     env:
                         APP_ENV: '%kernel.environment%'
 
-        # A second client, to show that identity, timeouts and handlers are
+        # The same suite, over the 2026-07-28 wire. `protocol_version` is what
+        # picks the era: the SDK's client stops sending `initialize`, puts the
+        # `_meta` envelope on every request, derives the SEP-2243 headers from
+        # the message, and answers a multi round-trip call itself — so the
+        # caller sees the same API it uses against a handshake server.
+        #
+        # Its own client rather than a sixth connection on "regression", because
+        # the revision is a property of the client, not of one server.
+        modern:
+            client_info:
+                name: 'mcp-demo-regression-2026'
+                version: '1.0.0'
+                description: 'The regression harness of the MCP demo application, on the modern lifecycle.'
+            protocol_version: '2026-07-28'
+
+            # Elicitation is the only one of the three that survives the
+            # revision, and it arrives inverted: the server returns the question
+            # as its result rather than sending a request, and the client
+            # answers and retries. The handler is the same either way.
+            elicitation: 'App\Mcp\Client\ScriptedElicitationHandler'
+            forward_server_logs: true
+            request_timeout: 30
+
+            servers:
+                modern_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
+
+        # A third client, to show that identity, timeouts and handlers are
         # per client: this one advertises nothing, so the same servers see a
         # client that cannot be asked for roots, sampling or elicitation.
         minimal:

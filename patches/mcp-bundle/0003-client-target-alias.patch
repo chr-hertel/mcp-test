@@ -7,10 +7,10 @@ that example failed at compile time with "no such target exists".
 Registers both spellings.
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..4119c2f0 100644
+index f6136243..971e85ab 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
-@@ -163,7 +179,9 @@ final class McpBundle extends AbstractBundle
+@@ -163,7 +177,9 @@ final class McpBundle extends AbstractBundle
                  ->setArguments([$clientName, new Reference($locatorId)])
                  ->addTag('mcp.client', ['name' => $clientName]);
  

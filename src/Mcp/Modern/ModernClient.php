@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace App\Mcp\Modern;
 
+use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * A client for protocol revision 2026-07-28, written because the SDK does not
- * have one yet.
+ * A deliberately impolite client for protocol revision 2026-07-28.
  *
- * `Mcp\Client\Protocol::initialize()` downgrades to the newest handshake
- * revision when it is configured with a modern one, with a warning — so
- * `mcp.clients.<name>.protocol_version: '2026-07-28'` cannot actually be
- * honoured. See docs/patches.md.
+ * The SDK has a well-behaved one on the branch now, and the demo uses it: `mcp.clients.modern` in config/packages/mcp.yaml sets
+ * `protocol_version: '2026-07-28'` and the whole regression suite runs over it
+ * unchanged. This is what remains once that is true — the requests a conforming
+ * client will not make.
+ *
+ * A missing protocol version, a header that contradicts the body, a tampered
+ * `requestState`, a capability the request never declared: every one of those
+ * is something the SDK's client is careful to get right, so a suite driven by it
+ * can only ever prove the happy path. This one sends exactly the bytes it is
+ * told to, the same argument `tests/Support/JsonRpcBrowser.php` makes for the
+ * handshake era. It also carries `subscriptions/listen`, which the SDK's client
+ * does not implement.
  *
  * There is not much to it, which is the point of the revision: no handshake, no
  * session, no server-initiated requests. Every request carries what the server
@@ -46,9 +54,6 @@ final class ModernClient
         'tools/call' => 'name',
         'prompts/get' => 'name',
         'resources/read' => 'uri',
-        'tasks/get' => 'taskId',
-        'tasks/update' => 'taskId',
-        'tasks/cancel' => 'taskId',
     ];
 
     private int $id = 0;
@@ -176,6 +181,106 @@ final class ModernClient
         return str_contains($contentType, 'text/event-stream')
             ? $this->readStream($body)
             : (json_decode($body, true) ?: ['error' => ['code' => $response->getStatusCode(), 'message' => substr($body, 0, 300)]]);
+    }
+
+    /**
+     * Opens a `subscriptions/listen` stream and reads the frames it carries.
+     *
+     * The revision has no GET stream. A client that wants server-initiated
+     * notifications asks for them by name — an allow-list, not a hint — and the
+     * server answers by holding *this* response open. The subscription's id is
+     * this request's own JSON-RPC id, which is why the caller supplies one
+     * rather than the client minting it.
+     *
+     * `$whileOpen` runs as soon as the response headers are in, so a caller can
+     * provoke something to listen to. It travels on a second connection while
+     * this one is held, so the server needs a second worker — see
+     * docs/deployment.md, which also explains why this reads to the end of the
+     * stream rather than stopping at the frame it wanted: under a SAPI that
+     * buffers, no frame arrives until the stream closes, so waiting for the
+     * acknowledgment before provoking would wait forever.
+     *
+     * @param array<string, mixed>    $notifications the filter, as `params.notifications`
+     * @param (callable(): void)|null $whileOpen     provokes a notification, once the stream is open
+     *
+     * @return list<array<string, mixed>> every frame the stream carried, oldest first
+     */
+    public function listen(string $subscriptionId, array $notifications, ?callable $whileOpen = null, float $readFor = 20.0): array
+    {
+        $response = $this->http->request('POST', $this->endpoint, [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'text/event-stream',
+                'MCP-Protocol-Version' => self::PROTOCOL_VERSION,
+                'Mcp-Method' => 'subscriptions/listen',
+                ...$this->headers,
+            ],
+            'json' => [
+                'jsonrpc' => '2.0',
+                'id' => $subscriptionId,
+                'method' => 'subscriptions/listen',
+                'params' => [
+                    'notifications' => (object) $notifications,
+                    '_meta' => [
+                        self::META_VERSION => self::PROTOCOL_VERSION,
+                        self::META_CAPABILITIES => (object) $this->capabilities,
+                        self::META_CLIENT_INFO => ['name' => 'mcp-demo-modern', 'version' => '1.0.0'],
+                    ],
+                ],
+            ],
+            'timeout' => $readFor,
+        ]);
+
+        $frames = [];
+        $buffer = '';
+        $provoked = false;
+
+        try {
+            // No per-chunk timeout: given one, the client raises the idle
+            // timeout as an exception rather than yielding a timeout chunk, and
+            // a stream that is quiet by design ends before it has said anything.
+            // The request's own timeout is what bounds this.
+            foreach ($this->http->stream($response) as $chunk) {
+                // The headers are in, so the server is holding the stream open:
+                // whatever is provoked now happens after it took its place on
+                // the notification bus, and therefore reaches it.
+                if (!$provoked && null !== $whileOpen) {
+                    $provoked = true;
+                    $whileOpen();
+                }
+
+                $buffer .= $chunk->getContent();
+
+                while (false !== $break = strpos($buffer, "\n")) {
+                    $line = rtrim(substr($buffer, 0, $break), "\r");
+                    $buffer = substr($buffer, $break + 1);
+
+                    // Anything else is a keep-alive comment or the blank line
+                    // between frames.
+                    if (!str_starts_with($line, 'data:')) {
+                        continue;
+                    }
+
+                    $decoded = json_decode(trim(substr($line, 5)), true);
+                    if (\is_array($decoded)) {
+                        $frames[] = $decoded;
+                    }
+                }
+
+                if ($chunk->isLast()) {
+                    break;
+                }
+            }
+        } catch (TransportExceptionInterface) {
+            // A server that never closes the stream ends up here, after
+            // `$readFor`; the frames already read are the answer.
+        } finally {
+            // Otherwise the server holds it for the configured lifetime, and a
+            // worker with it.
+            $response->cancel();
+        }
+
+        return $frames;
     }
 
     /**

@@ -45,9 +45,9 @@ final class ModernLifecycleTest extends McpTestCase
         $this->assertSame([ModernClient::PROTOCOL_VERSION], $result['supportedVersions']);
         $this->assertSame('symfonycon-2026', $result['_meta']['io.modelcontextprotocol/serverInfo']['name']);
 
-        // The tasks extension is advertised because the server was configured
-        // with a store; nothing in the code asks for it.
-        $this->assertArrayHasKey('io.modelcontextprotocol/tasks', $result['capabilities']['extensions']);
+        // MCP Apps is advertised because the server lists `apps:`; nothing in the
+        // code asks for it. Tasks (SEP-2663) is not — see docs/patches.md.
+        $this->assertArrayHasKey('io.modelcontextprotocol/ui', $result['capabilities']['extensions']);
     }
 
     public function testNoSessionIsEverMinted(): void
@@ -135,9 +135,10 @@ final class ModernLifecycleTest extends McpTestCase
         ], capabilities: ['elicitation' => []])['result'];
 
         $this->assertFalse($answered['isError'] ?? false);
+        $this->assertSame('submitted', $answered['structuredContent']['status']);
         // The title came from the sealed state, not from the second call's arguments.
-        $this->assertSame('A Proposal Over Two Round Trips', $answered['structuredContent']['title']);
-        $this->assertSame('Round Two', $answered['structuredContent']['speaker_name']);
+        $this->assertSame('A Proposal Over Two Round Trips', $answered['structuredContent']['proposal']['title']);
+        $this->assertSame('Round Two', $answered['structuredContent']['proposal']['speaker_name']);
     }
 
     public function testAskingAClientThatCannotAnswerIsRefused(): void
@@ -153,34 +154,6 @@ final class ModernLifecycleTest extends McpTestCase
         $this->assertArrayHasKey('error', $envelope);
         $this->assertSame(-32021, $envelope['error']['code']);
         $this->assertArrayHasKey('requiredCapabilities', $envelope['error']['data']);
-    }
-
-    public function testATaskHandleIsStoredBeforeItIsHandedOut(): void
-    {
-        $created = $this->rpc('tools/call', [
-            'name' => 'audit_schedule',
-            'arguments' => ['depth' => 1],
-        ], capabilities: ['extensions' => ['io.modelcontextprotocol/tasks' => []]])['result'];
-
-        $this->assertSame('task', $created['resultType']);
-        $this->assertSame('working', $created['status']);
-
-        $fetched = $this->rpc('tasks/get', ['taskId' => $created['taskId']], capabilities: [
-            'extensions' => ['io.modelcontextprotocol/tasks' => []],
-        ])['result'];
-
-        $this->assertSame($created['taskId'], $fetched['taskId']);
-        // A tool that ran and reported a problem is completed with isError; failed
-        // is reserved for protocol-level errors.
-        $this->assertSame('completed', $fetched['status']);
-    }
-
-    public function testAToolFallsBackToRunningInlineWithoutTheExtension(): void
-    {
-        $result = $this->rpc('tools/call', ['name' => 'audit_schedule', 'arguments' => ['depth' => 1]])['result'];
-
-        $this->assertNotSame('task', $result['resultType'] ?? null);
-        $this->assertIsArray($result['structuredContent']['conflicts']);
     }
 
     public function testAHeaderThatDisagreesWithTheBodyIsRefused(): void
@@ -260,7 +233,7 @@ final class ModernLifecycleTest extends McpTestCase
             ...$headers,
         ];
 
-        $named = ['tools/call' => 'name', 'prompts/get' => 'name', 'resources/read' => 'uri', 'tasks/get' => 'taskId'];
+        $named = ['tools/call' => 'name', 'prompts/get' => 'name', 'resources/read' => 'uri'];
         if (isset($named[$method], $params[$named[$method]])) {
             $server['HTTP_MCP_NAME'] = (string) $params[$named[$method]];
         }

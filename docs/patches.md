@@ -1,17 +1,25 @@
 # Upstream findings
 
 Everything in this file was found by building the demo and then pointing its own
-MCP client at its own MCP servers — `make regression`. Six problems needed a code
-change; four more are behaviours worth knowing about but not obviously wrong.
+MCP client at its own MCP servers — `make regression`. Seven problems needed a
+code change; six more are behaviours worth knowing about, or upstream moves
+worth recording, but not bugs.
 
-Two of the six only surfaced once the demo actually spoke protocol revision
+Three of the seven only surfaced once the demo actually spoke protocol revision
 2026-07-28, which is what the SDK branch exists for: the bundle could not serve
-that revision at all, and `x-mcp-header` — the annotation the revision adds —
-could not survive schema generation.
+that revision at all, `x-mcp-header` — the annotation the revision adds — could
+not survive schema generation, and the notification bus behind
+`subscriptions/listen` was read by every stream and written to by nothing.
 
-The patches live in [`patches/`](../patches) and are applied to the clones under
-`upstream/` by `make apply-patches`. Each one applies cleanly to a pristine
-checkout of the branch it targets, in file-name order:
+Two have since been answered on the SDK branch itself — the schema one by the
+patch this demo carried, and the client's inability to speak 2026-07-28 by an
+implementation of it. Both write-ups stay below, marked, because the finding is
+the artefact and the diff was only ever how it travelled. Nothing here carries
+an SDK patch any more; `patches/` is the bundle's.
+
+The six remaining patches live in [`patches/`](../patches) and are applied to the
+bundle clone under `upstream/` by `make apply-patches`. Each one applies cleanly
+to a pristine checkout of the branch it targets, in file-name order:
 
 ```console
 $ make upstream          # clone both branches and apply every patch
@@ -33,6 +41,13 @@ Base branches (record the SHA when you tag — these are branches, not releases)
 |---|---|---|
 | `mcp/sdk` | [chr-hertel/php-sdk](https://github.com/chr-hertel/php-sdk) | `2026spec-findings` ([PR #3](https://github.com/chr-hertel/php-sdk/pull/3)) |
 | `symfony/mcp-bundle` | [chr-hertel/ai](https://github.com/chr-hertel/ai) | `mcp-bundle-servers-and-clients` ([PR #44](https://github.com/chr-hertel/ai/pull/44)) |
+
+Nothing below cites a commit, on purpose: both branches are rewritten in place —
+`2026spec-findings` currently squashes to one WIP commit, to be decomposed before
+review — so a SHA in prose is a dead link within the week. `make upstream-check`
+is what tells you whether the clone still matches the tip, and the sign-off table
+in [`release-checklist.md`](release-checklist.md) is where the SHA you tested
+against belongs.
 
 ---
 
@@ -117,14 +132,16 @@ application could reach it. The bundle built `Builder::build()` onto
 `buildStateless()` onto `StatelessHttpTransport`, and there was no configuration
 that got there.
 
-Four builder calls were unreachable for the same reason — `setRequestState()`
+Three builder calls were unreachable for the same reason — `setRequestState()`
 (without which a multi-round-trip handler cannot remember anything between
 rounds), `setCachePolicy()` (hints the revision *requires* on `server/discover`,
-the list methods and `resources/read`), `setNotificationBus()` and
-`enableExtension(new TasksExtension(...))`.
+the list methods and `resources/read`) and `setNotificationBus()`.
+
+The patch also wired `enableExtension(new TasksExtension(...))` until the SDK
+branch carved Tasks out; see *Tasks left the branch* below.
 
 The patch adds `lifecycle: handshake|stateless` per server plus the configuration
-for those four, a `StatelessMcpController`, and compile-time refusal of the
+for those three, a `StatelessMcpController`, and compile-time refusal of the
 combinations the revision forbids — a stateless server with STDIO, or with a
 session store it has no use for.
 
@@ -134,9 +151,13 @@ the bundle's own suite is run against the branch in the meantime.
 
 ### 5. A parameter's complete schema definition was nested instead of applied
 
-**`patches/php-sdk/0001-parameter-level-schema-definition.patch`**
+**Landed upstream** on `2026spec-findings`, 17 August 2026 — no patch is carried
+for it any more
 
-The first patch to the SDK rather than the bundle.
+The only finding here that was the SDK's rather than the bundle's, and the only
+one whose *patch* was taken upstream. `patches/php-sdk/` went with it: the demo
+tracks the branch tip, and the tip has the fix. Everything below is what it was
+for.
 
 `#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
 takes precedence over individual properties", and at the *method* level
@@ -178,7 +199,7 @@ than by assuming the first one was alone. The rest came out clean:
 | `outputSchema` | passed through raw; no `definition` involved |
 | prompt arguments, resource-template variables | never reach the generator — `PromptArgument` is name/description/required, per spec |
 
-Two behaviours were judgement calls rather than accidents, so the patch pins both
+Two behaviours were judgement calls rather than accidents, so the fix pins both
 with tests:
 
 - **The signature default survives.** It is what the handler receives when the
@@ -217,9 +238,79 @@ that exact example failed at compile time:
 
 Registering both spellings costs one line and makes the documented form work.
 
+### 7. A configured notification bus was never written to
+
+**`patches/mcp-bundle/0006-registry-publishes-to-the-bus.patch`**
+
+`subscriptions:` configures a notification bus, and the protocol reads it: every
+`subscriptions/listen` stream polls it for the list-changed notifications it
+agreed to carry. Nothing ever wrote to it.
+
+The SDK wires the publishing half itself — `Builder::build()` wraps the event
+dispatcher in a `PublishingEventDispatcher` when a bus is configured, so that a
+runtime `registerTool()` reaches a listening client without the caller knowing a
+bus exists. But it can only wrap a registry it constructs, and a registry handed
+in through `setRegistry()` is already built:
+
+```php
+if ($this->hasCustomRegistry) {
+    // Builder can't inject the loader into an already-constructed instance, so load it eagerly.
+    $registry = $this->registry;
+    $chainLoader->load($registry);
+```
+
+The bundle always supplies one — `mcp.server.<name>.registry`, constructed with
+Symfony's `event_dispatcher` — so the wrapping never happened. The two halves
+were each individually right and never met.
+
+What that looks like from a client is worse than an error: the stream opens, the
+acknowledgment names the types the server agreed to carry, keep-alives arrive
+for the configured lifetime, and it closes gracefully having carried nothing —
+no matter what changed on the server. Every observable part of the mechanism
+works except the one that matters.
+
+The fix gives the registry the publishing dispatcher where it is registered,
+which is the only place the bundle knows both it and the bus. Per server rather
+than one publisher on the shared dispatcher: the registries are per server, and
+a tool appearing on one is not news to a client subscribed to another.
+
+Found by the *subscriptions* group of the 2026-07-28 regression suite, which was
+written to pin the acknowledgment contract and found this on its first run.
+
 ---
 
 ## Not patched, but worth knowing
+
+### Every registration is announced, and the registry is rebuilt per request
+
+`Registry::registerTool()` and friends dispatch a list-changed event on **every**
+call, not on a change:
+
+```php
+$this->tools[$tool->name] = $reference;
+
+$this->eventDispatcher?->dispatch(new ToolListChangedEvent());
+```
+
+Under a persistent runtime that is exactly right — a registration is news. Under
+PHP-FPM it is not: the registry is built from scratch on every request, so every
+request re-registers everything it has, and each of those registrations is
+published to the bus as a change. One `tools/list` against the `modern` server
+puts around sixty list-changed notifications on it.
+
+A client subscribed to all three list-changed types therefore learns that every
+list changed, several times over, every time anybody touches the server. The
+lists it would refetch are identical to the ones it has.
+
+Not patched, because the fix is a design decision rather than a bug fix, and
+there are at least three reasonable ones: publish only when a registration
+actually changes something, suppress publishing while a registry loads its
+declared elements, or make the demo's own [`HouseKeepingLoader`](../src/Mcp/Loader/HouseKeepingLoader.php)
+idempotent and leave the SDK alone. The first two are the SDK maintainer's call.
+
+The regression suite pins the delivery rather than the volume — "a registry
+change reaches the stream, tagged with it" — so a fix in any of those directions
+keeps it green, while delivery breaking again does not.
 
 ### An unhandled exception in a tool is a protocol error, not a tool error
 
@@ -309,15 +400,12 @@ in, so an application using the bundle cannot reach them at all:
 | `setLazyLoading()` | deferring element registration |
 | `enableExtension()` | any extension other than MCP Apps, which `McpAppPass` enables implicitly |
 
-The practical consequence for this demo: `probe_client` reports
-`tasks: false` on every connection, because the negotiated revision is
-`2025-11-25` and nothing can change that from configuration. Long-running tasks
-(SEP-2663) and resource subscriptions are therefore the two headline features of
-the SDK branch that are **not** demonstrated here — not because they do not work,
-but because the bundle has no seam to reach them through.
-
-The smallest useful addition would be `mcp.servers.<name>.protocol_version`,
-mirroring the option the client side already has.
+Patch 0005 opened most of that up — `buildStateless()`, `setCachePolicy()`,
+`setNotificationBus()`, `setSubscriptionLifetime()` and `enableExtension()` all
+have configuration now. What is still unreachable is `setProtocolVersion()` on a
+*handshake* server and `setLazyLoading()`, and the smallest useful addition would
+be `mcp.servers.<name>.protocol_version`, mirroring the option the client side
+already has.
 
 ### The Inspector reaches 2026-07-28, but not by default
 
@@ -334,29 +422,67 @@ has no flag and its config file carries no such key, so `--cli` opens with
 `initialize` and a stateless server refuses it with `-32602` — which reads as "no
 support" and is not.
 
-### The SDK's client cannot speak 2026-07-28
+### The SDK's client speaks 2026-07-28 — since 18 August 2026
 
-`Mcp\Client\Protocol::initialize()` falls back to the newest *handshake*
-revision when it is configured with a modern one, and logs a warning:
+**Resolved upstream** on `2026spec-findings`, 18 August 2026
 
-```php
-if ($offered->isModern()) {
-    $offered = ProtocolVersion::latestHandshake();
-    $this->logger->warning('Configured protocol version cannot be reached through the "initialize" handshake…');
-}
-```
+This used to read *cannot*. `Mcp\Client\Protocol::initialize()` fell back to the
+newest handshake revision when configured with a modern one and logged a
+warning, so `mcp.clients.<name>.protocol_version: '2026-07-28'` was accepted by
+the bundle and then silently downgraded — the configuration was expressible and
+inert, which is the same shape of bug as [the bus nothing published to](#7-a-configured-notification-bus-was-never-written-to).
 
-Which is correct — there is no `initialize` in the modern era, so a handshake
-client cannot get there. But the bundle exposes
-`mcp.clients.<name>.protocol_version` with `2026-07-28` among its allowed values,
-so that configuration is accepted and then silently downgraded. Either the enum
-should exclude the modern revisions until the client supports them, or the
-option should fail loudly.
+Setting a modern revision now selects the modern wire instead: no `initialize`,
+a `_meta` envelope on every request, the SEP-2243 headers derived from the
+message, and a multi round-trip call answered and retried by the client so the
+caller sees one call and one result. Nothing in the bundle had to change — it
+already passed `protocol_version` to `setProtocolVersion()`.
 
-This is why the demo brings its own [`ModernClient`](../src/Mcp/Modern/ModernClient.php)
-rather than driving the modern server through the bundle: there is nothing in
-either library that can. It is about 200 lines, which is itself a reasonable
-argument that the SDK could carry one.
+So the demo adopted it. `mcp.clients.modern` drives the `modern` server through
+the bundle like any other connection, and the *same* `RegressionRunner` runs
+over both eras: 35 of its checks pass unchanged over the modern wire, two are
+skipped because the revision removed the method (`ping`, `logging/setLevel`),
+and the elicitation round trip passes without knowing that the question now
+travels in the opposite direction.
+
+[`ModernClient`](../src/Mcp/Modern/ModernClient.php) stayed, with a smaller job:
+the requests a conforming client will not make. A missing protocol version, a
+header that contradicts the body, a tampered `requestState` — the refusals the
+revision requires can only be tested by a client willing to be wrong. It also
+still carries `subscriptions/listen`, which the SDK's client does not implement.
+
+### Tasks left the branch on 19 August 2026
+
+The SDK branch carried the Tasks extension (SEP-2663) — `tasks/get`, a durable
+handle instead of a held-open connection, two stores — and this demo
+demonstrated it: `tasks: { store: cache }` on the `modern` server, an
+`audit_schedule` tool, two regression checks and two functional tests.
+
+It is gone from `2026spec-findings`, carved out into PR #428. The branch's own
+`spec-report.md` says so in three places; nothing was lost, it just travels
+separately now. `Mcp\Server\Task\*`, `Mcp\Schema\Task`, `TaskStatus` and
+`RequestContext::supportsTasks()` all went with it, which is a compile-time break
+rather than a behavioural one: the `modern` server could not be built at all, and
+sixteen tests failed with *Class "Mcp\Server\Task\TasksExtension" not found*.
+
+So the demo's tasks surface is parked, not deleted-and-forgotten. Restoring it
+means putting back, in this order:
+
+| Where | What |
+|---|---|
+| `patches/mcp-bundle/0005-stateless-lifecycle.patch` | the `tasks:` config node, `taskStore()`, `enableExtension(new TasksExtension(...))` and their two bundle tests |
+| `config/packages/mcp.yaml` | `tasks: { store: cache }` on `modern`, and the `audit_schedule` sentence in its instructions |
+| `ModernLifecycleTool` | `auditSchedule()` and the `audit()` helper it used |
+| `DiagnosticsTool`, `RegressionRunner` | the `tasks` key in `probe_client` and in the capability probe |
+| `ModernRegressionRunner` | the `tasks` group and the discovery check for the advertised extension |
+| `ModernClient` | `tasks/get`, `tasks/update` and `tasks/cancel` in `NAMED_METHODS` |
+| `ModernLifecycleTest` | the two task tests and the extension assertion |
+
+The alternative was tracking two branches at once — `feat-ext-tasks` has Tasks
+but not the stateless lifecycle, so the clone would have to merge them. A
+test-merge conflicts in 26 files, including `SchemaGenerator` and the MCP Apps
+example, and both branches are still moving. Parking is cheaper than carrying
+that.
 
 ### `session.store: cache` needs `psr/simple-cache`
 

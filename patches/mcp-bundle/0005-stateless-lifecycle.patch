@@ -49,10 +49,10 @@ Note for upstreaming: this depends on SDK surface that only exists on the
 `"mcp/sdk": "^0.7"` constraint has to move with it.
 
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
-index 3f140a1b..f9670485 100644
+index 3f140a1b..cec66911 100644
 --- a/src/mcp-bundle/config/options.php
 +++ b/src/mcp-bundle/config/options.php
-@@ -91,6 +91,71 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -91,6 +91,61 @@ return static function (DefinitionConfigurator $configurator): void {
                              ->end()
                          ->end()
  
@@ -111,20 +111,10 @@ index 3f140a1b..f9670485 100644
 +                            ->end()
 +                        ->end()
 +
-+                        ->arrayNode('tasks')
-+                            ->addDefaultsIfNotSet()
-+                            ->info('The tasks extension (SEP-2663): a durable handle instead of a held-open connection.')
-+                            ->children()
-+                                ->enumNode('store')->values(['none', 'memory', 'cache'])->defaultValue('none')->end()
-+                                ->stringNode('cache_pool')->defaultValue('cache.mcp.tasks')->info('PSR-16 service for the "cache" store. The worker that creates a task is not the one polled for it, so "memory" only works in a single-process runtime.')->end()
-+                                ->stringNode('input_handler')->defaultNull()->info('Service id implementing Mcp\Server\Task\TaskInputHandlerInterface, for answering a parked task.')->end()
-+                            ->end()
-+                        ->end()
-+
                          ->arrayNode('session')
                              ->addDefaultsIfNotSet()
                              ->info('Session storage. Every server needs its own store: session ids are not namespaced by server, so a shared store makes a session minted on one server valid on the others.')
-@@ -114,6 +179,15 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -114,6 +169,15 @@ return static function (DefinitionConfigurator $configurator): void {
                              && [] === $v['resources'] && [] === $v['resource_templates'] && [] === $v['apps'])
                          ->thenInvalid('An MCP server must expose at least one of "tools", "prompts", "resources", "resource_templates" or "apps". Use ["*"] to expose every element of a kind.')
                      ->end()
@@ -211,7 +201,7 @@ index 00000000..abd4627d
 +}
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..4119c2f0 100644
+index f6136243..971e85ab 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
 @@ -15,18 +15,19 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -234,21 +224,19 @@ index f6136243..4119c2f0 100644
  use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
-@@ -34,6 +37,13 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
+@@ -34,6 +37,11 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
  use Mcp\Server\Session\FileSessionStore;
  use Mcp\Server\Session\InMemorySessionStore;
  use Mcp\Server\Session\Psr16SessionStore;
 +use Mcp\Server\Stateless\StatelessProtocol;
 +use Mcp\Server\Subscription\InMemoryNotificationBus;
 +use Mcp\Server\Subscription\Psr16NotificationBus;
-+use Mcp\Server\Task\InMemoryTaskStore;
-+use Mcp\Server\Task\Psr16TaskStore;
-+use Mcp\Server\Task\TasksExtension;
++use Mcp\Server\Subscription\PublishingEventDispatcher;
 +use Mcp\Server\Wire\CachePolicy;
  use Symfony\AI\McpBundle\App\McpAppRenderer;
  use Symfony\AI\McpBundle\Attribute\AsMcpApp;
  use Symfony\AI\McpBundle\Client\McpClient;
-@@ -45,6 +55,7 @@ use Symfony\AI\McpBundle\Command\ClientDebugCommand;
+@@ -45,6 +53,7 @@ use Symfony\AI\McpBundle\Command\ClientDebugCommand;
  use Symfony\AI\McpBundle\Command\DebugCommand;
  use Symfony\AI\McpBundle\Command\McpCommand;
  use Symfony\AI\McpBundle\Controller\McpController;
@@ -256,7 +244,7 @@ index f6136243..4119c2f0 100644
  use Symfony\AI\McpBundle\DependencyInjection\McpAppPass;
  use Symfony\AI\McpBundle\DependencyInjection\McpPass;
  use Symfony\AI\McpBundle\Exception\LogicException;
-@@ -315,7 +339,10 @@ final class McpBundle extends AbstractBundle
+@@ -315,10 +337,13 @@ final class McpBundle extends AbstractBundle
      {
          $registryId = \sprintf('mcp.server.%s.registry', $name);
          $builderId = \sprintf('mcp.server.%s.builder', $name);
@@ -268,7 +256,10 @@ index f6136243..4119c2f0 100644
  
          $container->register($registryId, Registry::class)
              ->setArguments([new Reference('event_dispatcher'), new Reference('logger')])
-@@ -334,7 +361,6 @@ final class McpBundle extends AbstractBundle
+             ->addTag('monolog.logger', ['channel' => 'mcp']);
+ 
+         $container->register($builderId, Builder::class)
+@@ -334,7 +359,6 @@ final class McpBundle extends AbstractBundle
              ->addMethodCall('setInstructions', [$server['instructions']])
              ->addMethodCall('setEventDispatcher', [new Reference('event_dispatcher')])
              ->addMethodCall('setRegistry', [new Reference($registryId)])
@@ -276,7 +267,7 @@ index f6136243..4119c2f0 100644
              ->addMethodCall('addRequestHandlers', [new TaggedIteratorArgument('mcp.request_handler')])
              ->addMethodCall('addNotificationHandlers', [new TaggedIteratorArgument('mcp.notification_handler')])
              ->addMethodCall('addLoaders', [new TaggedIteratorArgument('mcp.loader')])
-@@ -342,10 +368,32 @@ final class McpBundle extends AbstractBundle
+@@ -342,10 +366,32 @@ final class McpBundle extends AbstractBundle
              ->addTag('mcp.server.builder', ['server' => $name])
              ->addTag('monolog.logger', ['channel' => 'mcp']);
  
@@ -312,7 +303,7 @@ index f6136243..4119c2f0 100644
  
          if (!$server['transports']['http']) {
              return;
-@@ -354,7 +402,10 @@ final class McpBundle extends AbstractBundle
+@@ -354,7 +400,10 @@ final class McpBundle extends AbstractBundle
          $container->register(\sprintf('mcp.server.%s.middleware_factory', $name), MiddlewareFactory::class)
              ->setArguments([$server['http']['allowed_hosts']]);
  
@@ -324,13 +315,13 @@ index f6136243..4119c2f0 100644
              ->setArguments([
                  new Reference('mcp.server.'.$name),
                  new Reference('mcp.psr_http_factory'),
-@@ -369,6 +420,109 @@ final class McpBundle extends AbstractBundle
+@@ -369,6 +418,84 @@ final class McpBundle extends AbstractBundle
              ->addTag('monolog.logger', ['channel' => 'mcp']);
      }
  
 +    /**
 +     * The builder calls that only mean something under the 2026-07-28 lifecycle:
-+     * multi-round-trip state, cache hints, subscription delivery and tasks.
++     * multi-round-trip state, cache hints and subscription delivery.
 +     *
 +     * They are configured for either lifecycle so that one server definition can
 +     * be mounted twice, but nothing here changes how a handshake-era server behaves.
@@ -364,17 +355,6 @@ index f6136243..4119c2f0 100644
 +                ->addMethodCall('setNotificationBus', [$this->notificationBus($name, $server['subscriptions'], $container)])
 +                ->addMethodCall('setSubscriptionLifetime', [$server['subscriptions']['lifetime']]);
 +        }
-+
-+        if ('none' === $server['tasks']['store']) {
-+            return;
-+        }
-+
-+        $builder->addMethodCall('enableExtension', [
-+            new Definition(TasksExtension::class, [
-+                $this->taskStore($name, $server['tasks'], $container),
-+                null === $server['tasks']['input_handler'] ? null : new Reference($server['tasks']['input_handler']),
-+            ]),
-+        ]);
 +    }
 +
 +    private function cacheScope(string $scope): Definition
@@ -405,20 +385,6 @@ index f6136243..4119c2f0 100644
 +    }
 +
 +    /**
-+     * @param array{store: string, cache_pool: string, input_handler: string|null} $tasks
-+     */
-+    private function taskStore(string $name, array $tasks, ContainerBuilder $container): Definition
-+    {
-+        if ('memory' === $tasks['store']) {
-+            return new Definition(InMemoryTaskStore::class);
-+        }
-+
-+        $this->registerPsr16Fallback($tasks['cache_pool'], 'cache.mcp.tasks', $container);
-+
-+        return new Definition(Psr16TaskStore::class, [new Reference($tasks['cache_pool'])]);
-+    }
-+
-+    /**
 +     * Creates the default PSR-16 pool as a wrapper around cache.app, as the session
 +     * store already does, so the common case needs no services.yaml entry.
 +     */
@@ -434,7 +400,7 @@ index f6136243..4119c2f0 100644
      /**
       * @param array<string, array<string, mixed>> $servers
       */
-@@ -487,6 +641,11 @@ final class McpBundle extends AbstractBundle
+@@ -487,6 +614,11 @@ final class McpBundle extends AbstractBundle
                  $paths[$path] = $name;
              }
  
@@ -446,18 +412,15 @@ index f6136243..4119c2f0 100644
              $session = $server['session'];
              $key = match ($session['store']) {
                  'file' => 'file:'.($session['directory'] ?? '%kernel.cache_dir%/mcp-sessions/'.$name),
-
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
-index 49017294..cd30ac2c 100644
+index 49017294..813229cf 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php
-@@ -23,10 +23,15 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
+@@ -23,10 +23,13 @@ use Mcp\Server\Handler\Request\RequestHandlerInterface;
  use Mcp\Server\Session\FileSessionStore;
  use Mcp\Server\Session\InMemorySessionStore;
  use Mcp\Server\Session\Psr16SessionStore;
 +use Mcp\Server\Stateless\StatelessProtocol;
-+use Mcp\Server\Task\InMemoryTaskStore;
-+use Mcp\Server\Task\TasksExtension;
  use PHPUnit\Framework\Attributes\DataProvider;
  use PHPUnit\Framework\TestCase;
  use Symfony\AI\McpBundle\App\McpAppRenderer;
@@ -467,7 +430,7 @@ index 49017294..cd30ac2c 100644
  use Symfony\AI\McpBundle\Exception\LogicException;
  use Symfony\AI\McpBundle\McpBundle;
  use Symfony\AI\McpBundle\Session\FrameworkSessionStore;
-@@ -478,6 +483,111 @@ class McpBundleTest extends TestCase
+@@ -478,6 +481,105 @@ class McpBundleTest extends TestCase
          $this->assertTrue($container->hasDefinition(McpAppRenderer::SERVICE_ID));
      }
  
@@ -549,28 +512,22 @@ index 49017294..cd30ac2c 100644
 +        $this->assertSame(3600000, $policy->getArgument(1));
 +    }
 +
-+    public function testTasksAndSubscriptionsAreOptOut()
++    public function testSubscriptionsAreOptOut()
 +    {
 +        $container = $this->buildContainer($this->config(['modern' => ['lifecycle' => 'stateless', 'tools' => ['*']]]));
 +
-+        $this->assertSame([], $this->callsNamed($container, 'enableExtension', 'modern'));
 +        $this->assertSame([], $this->callsNamed($container, 'setNotificationBus', 'modern'));
 +    }
 +
-+    public function testTasksAndSubscriptionsAreWiredWhenAskedFor()
++    public function testSubscriptionsAreWiredWhenAskedFor()
 +    {
 +        $container = $this->buildContainer($this->config([
 +            'modern' => [
 +                'lifecycle' => 'stateless',
-+                'tasks' => ['store' => 'memory'],
 +                'subscriptions' => ['bus' => 'memory', 'lifetime' => 5.0],
 +                'tools' => ['*'],
 +            ],
 +        ]));
-+
-+        $extension = $this->callsNamed($container, 'enableExtension', 'modern')[0][1][0];
-+        $this->assertSame(TasksExtension::class, $extension->getClass());
-+        $this->assertSame(InMemoryTaskStore::class, $extension->getArgument(0)->getClass());
 +
 +        $this->assertSame([5.0], $this->callsNamed($container, 'setSubscriptionLifetime', 'modern')[0][1]);
 +        $this->assertTrue($container->hasDefinition('mcp.server.modern.notification_bus'));
