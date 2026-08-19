@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# Apply one patch series to one clone, and say what it found.
+#
+# "Already applied" and "no longer applies" look identical to `git apply
+# --check`, and treating them the same is how a moved upstream branch slips
+# through: setup reports success and the failure surfaces much later, somewhere
+# else. Reverse-checking tells them apart — but only for a patch whose lines
+# nothing else touches. Once two patches in a series change the same region, the
+# later one is context the earlier one's reverse no longer matches, and a
+# per-patch verdict of "fits neither way" stops meaning "upstream moved".
+#
+# So the verdict is taken over the series rather than per patch: a patch that
+# fits neither way is inconclusive on its own, and only damning when nothing
+# else in the series fit either. Each patch that does fit is applied before the
+# next is judged — the series is sequential, and a later patch's context is what
+# an earlier one left behind.
+#
+#     bin/apply-patches upstream/symfony-ai patches/mcp-bundle/*.patch
+#
+set -u
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+dir="$1"
+shift
+
+forward=()
+applied=()
+overlapping=()
+
+for patch in "$@"; do
+    [ -e "$patch" ] || continue
+
+    if git -C "$dir" apply --check "$root/$patch" 2>/dev/null; then
+        git -C "$dir" apply "$root/$patch" || exit 1
+        forward+=("$patch")
+    elif git -C "$dir" apply --check --reverse "$root/$patch" 2>/dev/null; then
+        applied+=("$patch")
+    else
+        overlapping+=("$patch")
+    fi
+done
+
+if [ ${#forward[@]} -eq 0 ] && [ ${#applied[@]} -eq 0 ] && [ ${#overlapping[@]} -eq 0 ]; then
+    exit 0
+fi
+
+# Nothing is in place and nothing fits: the branch moved out from under the
+# series, which is the finding this whole check exists for.
+if [ ${#forward[@]} -eq 0 ] && [ ${#applied[@]} -eq 0 ]; then
+    echo "FAILED    $dir"
+    echo
+    echo "  No patch in the series applies forwards, and none is already in place,"
+    echo "  so $dir has moved underneath them. Re-derive against the"
+    echo "  current tip and update docs/patches.md. See CLAUDE.md."
+    echo
+    git -C "$dir" apply --check -v "$root/${overlapping[0]}" 2>&1 | sed 's/^/  /' | head -20
+    exit 1
+fi
+
+for patch in "${forward[@]}"; do
+    echo "applied   $patch"
+done
+
+for patch in "${applied[@]}"; do
+    echo "in place  $patch"
+done
+
+# Reported rather than passed over: it is only benign because something else in
+# the series is demonstrably in place, and that is worth saying out loud.
+for patch in "${overlapping[@]}"; do
+    echo "overlaps  $patch (in place; its lines are context another patch rewrote)"
+done
+
+if [ ${#overlapping[@]} -gt 0 ]; then
+    echo
+    echo "  \"overlaps\" is not a check that passed — it is one that cannot be made."
+    echo "  bin/export-patches --dry-run settles it: it applies the series to a"
+    echo "  pristine clone and runs that repository's suite there."
+fi

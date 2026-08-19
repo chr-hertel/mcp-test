@@ -33,34 +33,13 @@ upstream: ## Clone the two upstream branches into upstream/ and apply patches/
 	else git clone --branch $(BUNDLE_REF) $(BUNDLE_REPO) upstream/symfony-ai; fi
 	@$(MAKE) --no-print-directory apply-patches
 
+# The verdict is taken over the series, not patch by patch: once two patches
+# touch the same region, the earlier one stops reverse-applying on its own, and
+# "fits neither way" stops meaning "upstream moved". See bin/apply-patches.
 .PHONY: apply-patches
 apply-patches: ## Apply every patch in patches/ to the upstream clones
-	@$(MAKE) --no-print-directory _apply DIR=upstream/symfony-ai PATCHES='patches/mcp-bundle/*.patch'
-	@$(MAKE) --no-print-directory _apply DIR=upstream/php-sdk    PATCHES='patches/php-sdk/*.patch'
-
-# "already applied" and "no longer applies" look the same to `git apply --check`,
-# and treating them the same is how a moved upstream branch slips through: the
-# setup reports success and the failure surfaces much later, somewhere else.
-# Reverse-checking tells them apart.
-.PHONY: _apply
-_apply:
-	@set -e; \
-	for patch in $(PATCHES); do \
-		[ -e "$$patch" ] || continue; \
-		if git -C $(DIR) apply --check "$(CURDIR)/$$patch" 2>/dev/null; then \
-			git -C $(DIR) apply "$(CURDIR)/$$patch"; echo "applied   $$patch"; \
-		elif git -C $(DIR) apply --check --reverse "$(CURDIR)/$$patch" 2>/dev/null; then \
-			echo "in place  $$patch"; \
-		else \
-			echo "FAILED    $$patch"; \
-			echo; \
-			echo "  It applies neither forwards nor in reverse, so $(DIR) has moved"; \
-			echo "  underneath it. Re-derive the patch against the current tip and"; \
-			echo "  update docs/patches.md. See CLAUDE.md."; \
-			git -C $(DIR) apply --check -v "$(CURDIR)/$$patch" 2>&1 | sed 's/^/  /' | head -20; \
-			exit 1; \
-		fi; \
-	done
+	@bin/apply-patches upstream/symfony-ai patches/mcp-bundle/*.patch
+	@bin/apply-patches upstream/php-sdk    patches/php-sdk/*.patch
 
 .PHONY: upstream-check
 upstream-check: ## Fail if either upstream branch has moved past the local clone

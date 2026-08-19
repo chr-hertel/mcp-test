@@ -37,6 +37,16 @@ BRANCH = "mcp-bundle-servers-and-clients"
 # Which patch a change belongs to. Markers must be unique to one feature: a
 # contiguous block matching two patches is rejected rather than guessed at,
 # because guessing is what lost a hunk and shipped a half-applied series.
+#
+# A third element lists *decisive* markers, for the case where uniqueness is not
+# achievable: a patch built on another's feature has to name it. The fix to a
+# subscription bus is written in the vocabulary of the patch that added the bus,
+# so a block carrying both is not ambiguous — it belongs to the later one, and
+# says so with a marker only it can carry.
+#
+# Ownership stays per run, so keep a decisive marker off anything that shares a
+# run with the earlier patch and is not the later one's: 0006's `use` statement
+# lands between 0005's, and travels with them rather than dragging them along.
 PATCHES = [
     (
         "0001-client-roots-option.patch",
@@ -68,6 +78,11 @@ PATCHES = [
             "$sessionId", "configureModernLifecycle",
         ],
     ),
+    (
+        "0006-registry-publishes-to-the-bus.patch",
+        ["registryDispatcher"],
+        ["registryDispatcher"],
+    ),
 ]
 
 # When a file belongs wholly to one patch, say so rather than relying on markers.
@@ -79,6 +94,7 @@ FILE_OWNER = {
     "src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php": "0001-client-roots-option.patch",
     "src/mcp-bundle/tests/DependencyInjection/McpPassTest.php": "0004-container-backed-completion-providers.patch",
     "src/mcp-bundle/src/DependencyInjection/McpPass.php": "0004-container-backed-completion-providers.patch",
+    "src/mcp-bundle/tests/DependencyInjection/McpBundleSubscriptionsTest.php": "0006-registry-publishes-to-the-bus.patch",
 }
 
 
@@ -108,7 +124,7 @@ def split_hunks(diff: str) -> tuple[str, list[str]]:
 
 def owner_of_line(line: str) -> str | None:
     """The patch one changed line belongs to."""
-    for name, markers in PATCHES:
+    for name, markers, *_ in PATCHES:
         if any(marker in line for marker in markers):
             return name
 
@@ -144,7 +160,7 @@ def split_by_owner(path: str, hunk: str) -> dict[str, str]:
 
         found = {
             name
-            for name, markers in PATCHES
+            for name, markers, *_ in PATCHES
             if any(marker in body[i] for i in run for marker in markers)
         }
 
@@ -159,12 +175,22 @@ def split_by_owner(path: str, hunk: str) -> dict[str, str]:
             return
 
         if len(found) > 1:
-            block = "\n".join(body[i] for i in run)
-            sys.exit(
-                f"Ambiguous change in {path} — one contiguous block carries "
-                f"{', '.join(sorted(found))}. Separate them so each block belongs to "
-                f"one patch, then re-run:\n\n{block[:600]}"
-            )
+            decisive = {
+                name
+                for name, _, *rest in PATCHES
+                if rest and any(marker in body[i] for i in run for marker in rest[0])
+            } & found
+
+            if len(decisive) != 1:
+                block = "\n".join(body[i] for i in run)
+                sys.exit(
+                    f"Ambiguous change in {path} — one contiguous block carries "
+                    f"{', '.join(sorted(found))}. Separate them so each block belongs to "
+                    f"one patch, or give the later one a decisive marker, then re-run:"
+                    f"\n\n{block[:600]}"
+                )
+
+            found = decisive
 
         owner = found.pop()
         for i in run:
@@ -212,7 +238,7 @@ def split_by_owner(path: str, hunk: str) -> dict[str, str]:
     # before it left it. A line another patch adds is therefore context if that
     # patch comes first, and absent if it comes later — getting this wrong is why
     # a naively split hunk applies on its own but not in sequence.
-    order = {name: position for position, (name, _) in enumerate(PATCHES)}
+    order = {entry[0]: position for position, entry in enumerate(PATCHES)}
 
     out = {}
     for owner in owners:
@@ -253,7 +279,7 @@ def build() -> dict[str, str]:
         sys.exit("upstream/symfony-ai has no working changes to export.")
 
     per_patch: dict[str, collections.OrderedDict] = {
-        name: collections.OrderedDict() for name, _ in PATCHES
+        entry[0]: collections.OrderedDict() for entry in PATCHES
     }
 
     for path in paths:
@@ -311,7 +337,7 @@ def verify(bodies: dict[str, str]) -> None:
                 f"  Rebase the clone first — see CLAUDE.md."
             )
 
-        for name, _ in PATCHES:
+        for name, *_ in PATCHES:
             patch = workdir / name
             patch.write_text(prose(name) + "\n\n" + bodies[name])
             result = subprocess.run(
@@ -357,7 +383,7 @@ def main() -> None:
 
     print("Splitting the working changes…")
     bodies = build()
-    for name, _ in PATCHES:
+    for name, *_ in PATCHES:
         hunks = bodies[name].count("\n@@") + bodies[name].startswith("@@")
         files = bodies[name].count("diff --git")
         print(f"  {name}: {files} file(s)")
@@ -369,7 +395,7 @@ def main() -> None:
         print("Dry run: nothing written.")
         return
 
-    for name, _ in PATCHES:
+    for name, *_ in PATCHES:
         (PATCH_DIR / name).write_text(prose(name) + "\n\n" + bodies[name])
     print(f"Wrote {len(bodies)} patches to {PATCH_DIR.relative_to(ROOT)}/")
 
