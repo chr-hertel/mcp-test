@@ -12,10 +12,10 @@ Autoconfigures every service implementing the SDK's
 tag, and adds them to each server's locator keyed by class name and service id.
 
 diff --git a/src/mcp-bundle/src/DependencyInjection/McpPass.php b/src/mcp-bundle/src/DependencyInjection/McpPass.php
-index b32f8568..b65a3022 100644
+index f0808a57..c04a8f8b 100644
 --- a/src/mcp-bundle/src/DependencyInjection/McpPass.php
 +++ b/src/mcp-bundle/src/DependencyInjection/McpPass.php
-@@ -166,11 +166,28 @@ final class McpPass implements CompilerPassInterface
+@@ -189,11 +189,28 @@ final class McpPass implements CompilerPassInterface
          /** @var array<string, array<string, array{template: string, meta: array<string, mixed>|null}>> $appTemplates */
          $appTemplates = $container->hasParameter('mcp.servers.app_tool_templates') ? $container->getParameter('mcp.servers.app_tool_templates') : [];
  
@@ -46,7 +46,7 @@ index b32f8568..b65a3022 100644
              }
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..971e85ab 100644
+index 6b8f9e68..c9a55df4 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
 @@ -15,17 +15,18 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -68,7 +68,7 @@ index f6136243..971e85ab 100644
  use Mcp\Schema\Enum\ProtocolVersion;
  use Mcp\Schema\Icon;
  use Mcp\Server;
-@@ -93,6 +102,11 @@ final class McpBundle extends AbstractBundle
+@@ -92,6 +101,11 @@ final class McpBundle extends AbstractBundle
          $builder->registerForAutoconfiguration(LoaderInterface::class)
              ->addTag('mcp.loader');
  
@@ -81,7 +81,7 @@ index f6136243..971e85ab 100644
              ->addTag('mcp.request_handler');
  
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
-index 3418ef43..51ea3a8a 100644
+index 60dab989..ebf0e0a6 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
 @@ -15,6 +15,7 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -120,7 +120,7 @@ index 3418ef43..51ea3a8a 100644
      public function testThrowsWhenExplicitTagMethodDoesNotExist()
      {
          $container = $this->containerWithBuilder();
-@@ -406,6 +428,18 @@ class UserTemplate
+@@ -433,6 +455,18 @@ class UserTemplate
      }
  }
  
