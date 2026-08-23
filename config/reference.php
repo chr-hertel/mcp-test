@@ -1004,11 +1004,14 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             prefix?: string|Param, // Key prefix for the "cache" and "framework" stores. Defaults to "mcp-<name>-". // Default: null
  *             ttl?: int|Param, // Default: 3600
  *         },
- *         tools?: Param|string|list<scalar|Param|null>,
- *         prompts?: Param|string|list<scalar|Param|null>,
- *         resources?: Param|string|list<scalar|Param|null>,
- *         resource_templates?: Param|string|list<scalar|Param|null>,
- *         apps?: Param|string|list<scalar|Param|null>,
+ *         registry?: array{ // The elements this server exposes, either as one list covering every kind or as a map narrowing each kind.
+ *             tools?: Param|string|list<scalar|Param|null>,
+ *             prompts?: Param|string|list<scalar|Param|null>,
+ *             resources?: Param|string|list<scalar|Param|null>,
+ *             resource_templates?: Param|string|list<scalar|Param|null>,
+ *             apps?: Param|string|list<scalar|Param|null>,
+ *             ...<string, mixed>
+ *         },
  *     }>,
  *     clients?: list<array{ // Default: []
  *         client_info?: array{ // Identity advertised to every remote server of this client during the initialize handshake.

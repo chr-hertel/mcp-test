@@ -148,7 +148,7 @@ that already validates `Host`.
 targets it directly — that is all this demo does for `organizer`. Real
 deployments should use the MCP authorization spec (OAuth 2.1 with
 protected-resource metadata); the SDK ships worked examples under
-`upstream/php-sdk/examples/server/oauth-keycloak` and `oauth-microsoft`.
+`vendor/mcp/sdk/examples/server/oauth-keycloak` and `oauth-microsoft`.
 
 **Cold start.** Every STDIO tool call in `dev` pays for a container check.
 Configure hosts with `APP_ENV=prod` and a warmed cache; the difference is the

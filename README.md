@@ -1,12 +1,15 @@
 # MCP Demo — the PHP MCP SDK and Symfony, end to end
 
 A Symfony application that is an MCP **server** and an MCP **client** at the same
-time, built on the two upstream branches it is meant to exercise:
+time, built on the upstream it is meant to exercise:
 
-| Package | Branch |
-|---|---|
-| [`mcp/sdk`](https://github.com/chr-hertel/php-sdk) | [`2026spec-findings`](https://github.com/chr-hertel/php-sdk/pull/3) |
-| [`symfony/mcp-bundle`](https://github.com/chr-hertel/ai) | [`mcp-bundle-servers-and-clients`](https://github.com/chr-hertel/ai/pull/44) |
+| Package | Source | Why |
+|---|---|---|
+| [`mcp/sdk`](https://github.com/modelcontextprotocol/php-sdk) | Packagist, `dev-main` | The 2026-07-28 surface is on `main` and we carry no patches against it. |
+| [`symfony/mcp-bundle`](https://github.com/symfony/ai) | clone of `main` + `patches/` | Six patches `main` does not carry yet. |
+
+Both track a moving tip on purpose: `dev-main` re-resolves on every install, and
+`make upstream-check` fails the moment the bundle's `main` moves past the clone.
 
 The domain is a conference programme — talks, speakers, rooms, a schedule and a
 CFP inbox. It is deliberately ordinary, so that everything interesting on the
@@ -18,7 +21,7 @@ mocks agreeing with each other, and it is how the seven upstream problems in
 [`docs/patches.md`](docs/patches.md) were found.
 
 ```console
-$ make upstream      # clone both branches into upstream/, apply patches/
+$ make upstream      # clone symfony/ai into upstream/, apply patches/
 $ make setup         # composer install + seed dev, test and prod databases
 $ make check         # PHPUnit + the regression suite over STDIO — no web server needed
 $ make serve         # http://127.0.0.1:8099
@@ -108,8 +111,8 @@ against each other in one repository:
 ## The three servers
 
 Every server is built from the same attributed services. Which of them a server
-exposes is configuration, not code — see `tools:`, `prompts:`, `resources:`,
-`resource_templates:` and `apps:` in `config/packages/mcp.yaml`.
+exposes is configuration, not code — see each server's `registry:` block in
+`config/packages/mcp.yaml`.
 
 | Server | Endpoint | Lifecycle | STDIO | Exposes |
 |---|---|---|---|---|

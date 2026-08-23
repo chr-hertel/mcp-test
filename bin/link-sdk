@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
 #
-# Point a symfony/mcp-bundle checkout's dependencies at our mcp/sdk clone.
+# Point a symfony/mcp-bundle checkout's dependencies at the mcp/sdk this demo
+# installed.
 #
 # The bundle requires "mcp/sdk": "^0.7", so `composer install` inside it pulls the
-# released SDK — which does not have the 2026-07-28 surface the branch adds. A
+# released SDK — which does not have the 2026-07-28 surface patches/ builds on. A
 # patch that uses that surface then fails the bundle's own suite for a reason
 # that has nothing to do with the patch.
 #
+# We install mcp/sdk from Packagist as "dev-main as 0.7.99" and lock it, so the
+# demo's own vendor/mcp/sdk is the exact revision every check here ran against.
+# Linking the bundle to that directory means its suite and ours cannot disagree
+# about which SDK they mean.
+#
 # This is a test-harness concern, not something the patch should carry: the
-# constraint bump belongs in the upstream PR that merges the SDK branch.
+# constraint bump belongs in the upstream PR that merges the 2026-07-28 work.
 #
 #   bin/link-sdk <bundle-dir> [<sdk-dir>]
 #
 set -euo pipefail
 
 bundle="${1:?usage: bin/link-sdk <bundle-dir> [<sdk-dir>]}"
-sdk="$(cd "${2:-$(dirname "$0")/../upstream/php-sdk}" && pwd)"
+sdk="$(cd "${2:-$(dirname "$0")/../vendor/mcp/sdk}" && pwd)"
 
-[ -f "$sdk/composer.json" ] || { echo "No mcp/sdk clone at $sdk" >&2; exit 1; }
+[ -f "$sdk/composer.json" ] || { echo "No mcp/sdk at $sdk — run 'composer install' first." >&2; exit 1; }
 
 composer --working-dir="$bundle" --quiet config repositories.mcp-sdk \
     "{\"type\":\"path\",\"url\":\"$sdk\",\"options\":{\"symlink\":true,\"versions\":{\"mcp/sdk\":\"0.7.99\"}}}"
@@ -25,7 +31,7 @@ composer --working-dir="$bundle" --quiet config repositories.mcp-sdk \
 composer --working-dir="$bundle" --quiet --no-interaction install
 composer --working-dir="$bundle" --quiet --no-interaction update mcp/sdk
 
-# The repository entry has done its job once vendor/ points at the clone. Leaving
+# The repository entry has done its job once vendor/ points at the SDK. Leaving
 # it in composer.json would put it in `git diff`, and from there into a patch —
 # which is the last place a local path belongs.
 for f in composer.json composer.lock; do

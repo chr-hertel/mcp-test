@@ -2,29 +2,28 @@
 
 Everything in this file was found by building the demo and then pointing its own
 MCP client at its own MCP servers — `make regression`. Seven problems needed a
-code change; six more are behaviours worth knowing about, or upstream moves
+code change; ten more are behaviours worth knowing about, or upstream moves
 worth recording, but not bugs.
 
 Three of the seven only surfaced once the demo actually spoke protocol revision
-2026-07-28, which is what the SDK branch exists for: the bundle could not serve
-that revision at all, `x-mcp-header` — the annotation the revision adds — could
+2026-07-28: the bundle could not serve that revision at all, `x-mcp-header` — the annotation the revision adds — could
 not survive schema generation, and the notification bus behind
 `subscriptions/listen` was read by every stream and written to by nothing.
 
-Two have since been answered on the SDK branch itself — the schema one by the
-patch this demo carried, and the client's inability to speak 2026-07-28 by an
-implementation of it. Both write-ups stay below, marked, because the finding is
-the artefact and the diff was only ever how it travelled. Nothing here carries
-an SDK patch any more; `patches/` is the bundle's.
+Two have since been answered upstream — the schema one by the patch this demo
+carried, and the client's inability to speak 2026-07-28 by an implementation of
+it. Both write-ups stay below, marked, because the finding is the artefact and
+the diff was only ever how it travelled. Nothing here carries an SDK patch any
+more; `patches/` is the bundle's.
 
 The six remaining patches live in [`patches/`](../patches) and are applied to the
 bundle clone under `upstream/` by `make apply-patches`. Each one applies cleanly
-to a pristine checkout of the branch it targets, in file-name order:
+to a pristine checkout of `main`, in file-name order:
 
 ```console
-$ make upstream          # clone both branches and apply every patch
+$ make upstream          # clone symfony/ai and apply every patch
 $ make apply-patches     # re-apply after re-cloning; skips what is already in
-$ make export-patches    # dump the clones' working trees back out to patches/
+$ make export-patches    # dump the clone's working tree back out to patches/
 ```
 
 The series is re-split and re-verified by `make export-patches`, which applies it
@@ -35,18 +34,35 @@ and happily exported a series missing a `use` statement — it applied, it
 compiled, and the failure surfaced two phases later in the demo's own regression
 suite.
 
-Base branches (record the SHA when you tag — these are branches, not releases):
+The same check had a blind spot of its own until 23 August 2026. `git diff` does
+not report untracked files, so a patch that *creates* a file exported without it
+— and the verification could not see the gap, because it compared two `git diff`
+outputs and both omitted the same two files. The series applied, reproduced the
+tree and passed a suite that was four tests shorter than the one it was compared
+against. `bin/export-patches` now marks untracked files intent-to-add before
+reading the tree, which is what the verification step had been doing on its own
+side all along.
 
-| Package | Repository | Branch |
+Where upstream comes from:
+
+| Package | Source | Constraint |
 |---|---|---|
-| `mcp/sdk` | [chr-hertel/php-sdk](https://github.com/chr-hertel/php-sdk) | `2026spec-findings` ([PR #3](https://github.com/chr-hertel/php-sdk/pull/3)) |
-| `symfony/mcp-bundle` | [chr-hertel/ai](https://github.com/chr-hertel/ai) | `mcp-bundle-servers-and-clients` ([PR #44](https://github.com/chr-hertel/ai/pull/44)) |
+| `mcp/sdk` | [modelcontextprotocol/php-sdk](https://github.com/modelcontextprotocol/php-sdk) | Packagist `dev-main as 0.7.99` |
+| `symfony/mcp-bundle` | [symfony/ai](https://github.com/symfony/ai), `main` | path repository on `upstream/symfony-ai` |
 
-Nothing below cites a commit, on purpose: both branches are rewritten in place —
-`2026spec-findings` currently squashes to one WIP commit, to be decomposed before
-review — so a SHA in prose is a dead link within the week. `make upstream-check`
-is what tells you whether the clone still matches the tip, and the sign-off table
-in [`release-checklist.md`](release-checklist.md) is where the SHA you tested
+The SDK is no longer cloned. Every patch we carried against it has landed on its
+`main`, so a clone would be a slower copy of what composer installs anyway — and
+`dev-main` re-resolves the tip on every install, which is the drift detection a
+clone was giving us. The alias is needed because the bundle still requires
+`mcp/sdk: ^0.7`, and no dev branch satisfies a release constraint on its own;
+`bin/link-sdk` does the same thing for the bundle's own suite. The constraint
+bump belongs in the upstream PR that merges the 2026-07-28 work, not in a patch
+here.
+
+The bundle stays a clone because `patches/` still has six patches its `main` does
+not carry. `make upstream-check` is what tells you whether that clone still
+matches the tip, and the sign-off table in
+[`release-checklist.md`](release-checklist.md) is where the SHA you tested
 against belongs.
 
 ---
@@ -126,7 +142,7 @@ effort registering on the server side.
 
 **`patches/mcp-bundle/0005-stateless-lifecycle.patch`**
 
-The whole point of the SDK branch is protocol revision 2026-07-28, and no Symfony
+Protocol revision 2026-07-28 is what the SDK's `main` now serves, and no Symfony
 application could reach it. The bundle built `Builder::build()` onto
 `StreamableHttpTransport` and nothing else; the modern lifecycle needs
 `buildStateless()` onto `StatelessHttpTransport`, and there was no configuration
@@ -138,26 +154,26 @@ rounds), `setCachePolicy()` (hints the revision *requires* on `server/discover`,
 the list methods and `resources/read`) and `setNotificationBus()`.
 
 The patch also wired `enableExtension(new TasksExtension(...))` until the SDK
-branch carved Tasks out; see *Tasks left the branch* below.
+carved Tasks out; see *Tasks left the SDK* below.
 
 The patch adds `lifecycle: handshake|stateless` per server plus the configuration
 for those three, a `StatelessMcpController`, and compile-time refusal of the
 combinations the revision forbids — a stateless server with STDIO, or with a
 session store it has no use for.
 
-It depends on SDK surface that only exists on the branch, so it lands after that
-does; the bundle's `"mcp/sdk": "^0.7"` has to move with it. `bin/link-sdk` is how
-the bundle's own suite is run against the branch in the meantime.
+It depends on SDK surface that only exists on `mcp/sdk`'s `main`, so the bundle's
+`"mcp/sdk": "^0.7"` has to move with it. `bin/link-sdk` is how the bundle's own
+suite is run against that surface in the meantime.
 
 ### 5. A parameter's complete schema definition was nested instead of applied
 
-**Landed upstream** on `2026spec-findings`, 17 August 2026 — no patch is carried
-for it any more
+**Landed upstream** on `mcp/sdk` `main`, 17 August 2026 — no patch is carried for
+it any more
 
 The only finding here that was the SDK's rather than the bundle's, and the only
-one whose *patch* was taken upstream. `patches/php-sdk/` went with it: the demo
-tracks the branch tip, and the tip has the fix. Everything below is what it was
-for.
+one whose *patch* was taken upstream. `patches/php-sdk/` went with it, and so did
+the SDK clone: the demo installs `dev-main`, and `main` has the fix. Everything
+below is what it was for.
 
 `#[Schema(definition: [...])]` is documented as "the complete JSON schema array…
 takes precedence over individual properties", and at the *method* level
@@ -354,13 +370,14 @@ autoconfigured with `mcp.loader` and handed to **every** server builder:
 ```
 
 Attributed elements go through `ElementMatcher` and appear only on the servers
-whose `tools:` / `resources:` / … lists name them. Loader-registered elements go
-through nothing. So this configuration —
+whose `registry:` lists name them. Loader-registered elements go through nothing.
+So this configuration —
 
 ```yaml
 diagnostics:
-    tools: ['App\Mcp\Tool\Diagnostics\']
-    # resources: not listed, so: none
+    registry:
+        tools: ['App\Mcp\Tool\Diagnostics\']
+        # resources: not listed, so: none
 ```
 
 — serves two resources anyway, because
@@ -386,7 +403,7 @@ attribute.
 
 ### The bundle exposes about half of the SDK's server builder
 
-`Mcp\Server\Builder` grew a lot on the `2026spec-findings` branch. The bundle
+`Mcp\Server\Builder` grew a lot with the 2026-07-28 work. The bundle
 calls eleven of its methods; these have no configuration option and no other way
 in, so an application using the bundle cannot reach them at all:
 
@@ -407,6 +424,48 @@ have configuration now. What is still unreachable is `setProtocolVersion()` on a
 be `mcp.servers.<name>.protocol_version`, mirroring the option the client side
 already has.
 
+### The bundle's servers and clients landed on `main` — 22 August 2026
+
+The demo used to build on two forks: `chr-hertel/php-sdk@2026spec-findings` for
+the SDK and `chr-hertel/ai@mcp-bundle-servers-and-clients` for the bundle. Both
+are now merged. `mcp/sdk` is installed from Packagist as `dev-main`, and the
+bundle clone tracks `symfony/ai` `main`.
+
+Two things are worth knowing about the move, because neither is visible in a
+diffstat.
+
+**The capability lists moved under `registry:`.** What the demo wrote as five
+keys on a server —
+
+```yaml
+tools: ['App\Mcp\Tool\Programme\']
+prompts: ['*']
+```
+
+— upstream nests, and in exchange accepts one list covering every kind:
+
+```yaml
+registry:
+    tools: ['App\Mcp\Tool\Programme\']
+    prompts: ['*']
+
+registry: ['App\Mcp\']     # equivalent to naming that prefix for all five
+registry: '*'                # everything
+```
+
+`config/packages/mcp.yaml` moved with it, and so did the fixtures in the two test
+files `patches/` adds. Nothing about the meaning changed: they are still service
+ids, FQCNs, namespace prefixes or `*`.
+
+**Four of the six patches applied untouched; two did not.** `0005` rejected
+exactly one hunk, because the validation block it anchored on had moved into the
+new `registry` node — the two stateless transport refusals were re-placed on the
+server prototype by hand. `0006` then applied cleanly on top of it. `0003` and
+`0004` still apply as they were: it is easy to read `registerAliasForArgument`
+and `CompletionProvider` on `main` and conclude they landed, but `main` has only
+the first spelling of the alias and only the attribute — not the container-backed
+provider. All six are still needed.
+
 ### The Inspector reaches 2026-07-28, but not by default
 
 Worth recording because it is easy to conclude the opposite. Inspector 2.2.0
@@ -424,7 +483,7 @@ support" and is not.
 
 ### The SDK's client speaks 2026-07-28 — since 18 August 2026
 
-**Resolved upstream** on `2026spec-findings`, 18 August 2026
+**Resolved upstream** on `mcp/sdk` `main`, 18 August 2026
 
 This used to read *cannot*. `Mcp\Client\Protocol::initialize()` fell back to the
 newest handshake revision when configured with a modern one and logged a
@@ -451,14 +510,14 @@ header that contradicts the body, a tampered `requestState` — the refusals the
 revision requires can only be tested by a client willing to be wrong. It also
 still carries `subscriptions/listen`, which the SDK's client does not implement.
 
-### Tasks left the branch on 19 August 2026
+### Tasks left the SDK on 19 August 2026
 
-The SDK branch carried the Tasks extension (SEP-2663) — `tasks/get`, a durable
+The SDK's 2026-07-28 work carried the Tasks extension (SEP-2663) — `tasks/get`, a durable
 handle instead of a held-open connection, two stores — and this demo
 demonstrated it: `tasks: { store: cache }` on the `modern` server, an
 `audit_schedule` tool, two regression checks and two functional tests.
 
-It is gone from `2026spec-findings`, carved out into PR #428. The branch's own
+It is gone from `main`, carved out into PR #428. The SDK's own
 `spec-report.md` says so in three places; nothing was lost, it just travels
 separately now. `Mcp\Server\Task\*`, `Mcp\Schema\Task`, `TaskStatus` and
 `RequestContext::supportsTasks()` all went with it, which is a compile-time break

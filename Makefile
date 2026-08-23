@@ -10,11 +10,17 @@ PORT ?= 8099
 # single worker deadlocks. See docs/deployment.md.
 SERVER_WORKERS ?= 6
 
-# The upstream branches this demo is built against.
-SDK_REPO    := https://github.com/chr-hertel/php-sdk.git
-SDK_REF     := 2026spec-findings
-BUNDLE_REPO := https://github.com/chr-hertel/ai.git
-BUNDLE_REF  := mcp-bundle-servers-and-clients
+# The upstream this demo is built against.
+#
+# mcp/sdk comes from Packagist: the 2026-07-28 surface is on its main branch and
+# we carry no patches against it, so a clone would only be a slower copy of what
+# composer already installs. The constraint is aliased because symfony/mcp-bundle
+# still requires "^0.7", which no dev branch satisfies on its own.
+#
+# symfony/mcp-bundle stays a clone, because patches/ still has four patches that
+# main does not carry. See docs/patches.md.
+BUNDLE_REPO := https://github.com/symfony/ai.git
+BUNDLE_REF  := main
 
 .DEFAULT_GOAL := help
 
@@ -26,9 +32,7 @@ help: ## Show this help
 # -- setup -------------------------------------------------------------------
 
 .PHONY: upstream
-upstream: ## Clone the two upstream branches into upstream/ and apply patches/
-	@if [ -d upstream/php-sdk ]; then echo "upstream/php-sdk exists; remove it to re-clone."; \
-	else git clone --branch $(SDK_REF) $(SDK_REPO) upstream/php-sdk; fi
+upstream: ## Clone symfony/ai into upstream/ and apply patches/
 	@if [ -d upstream/symfony-ai ]; then echo "upstream/symfony-ai exists; remove it to re-clone."; \
 	else git clone --branch $(BUNDLE_REF) $(BUNDLE_REPO) upstream/symfony-ai; fi
 	@$(MAKE) --no-print-directory apply-patches
@@ -37,16 +41,14 @@ upstream: ## Clone the two upstream branches into upstream/ and apply patches/
 # touch the same region, the earlier one stops reverse-applying on its own, and
 # "fits neither way" stops meaning "upstream moved". See bin/apply-patches.
 .PHONY: apply-patches
-apply-patches: ## Apply every patch in patches/ to the upstream clones
+apply-patches: ## Apply every patch in patches/ to the upstream clone
 	@bin/apply-patches upstream/symfony-ai patches/mcp-bundle/*.patch
-	@bin/apply-patches upstream/php-sdk    patches/php-sdk/*.patch
 
 .PHONY: upstream-check
-upstream-check: ## Fail if either upstream branch has moved past the local clone
+upstream-check: ## Fail if the upstream branch has moved past the local clone
 	@set -e; \
-	git -C upstream/php-sdk    fetch -q origin $(SDK_REF); \
 	git -C upstream/symfony-ai fetch -q origin $(BUNDLE_REF); \
-	for entry in "php-sdk:$(SDK_REF)" "symfony-ai:$(BUNDLE_REF)"; do \
+	for entry in "symfony-ai:$(BUNDLE_REF)"; do \
 		dir=upstream/$${entry%%:*}; ref=$${entry##*:}; \
 		local_sha=$$(git -C $$dir rev-parse HEAD); \
 		remote_sha=$$(git -C $$dir rev-parse FETCH_HEAD); \
@@ -163,6 +165,6 @@ regression-2026: ## Run the 2026-07-28 checks only (needs `make serve`)
 check: test regression-stdio ## Everything that runs without a web server
 
 .PHONY: upstream-test
-upstream-test: ## Run the upstream libraries' own test suites against the patched clones
-	cd upstream/php-sdk && composer install --no-interaction --quiet && vendor/bin/phpunit --testsuite=unit
-	cd upstream/symfony-ai/src/mcp-bundle && composer install --no-interaction --quiet && vendor/bin/phpunit
+upstream-test: ## Run symfony/mcp-bundle's own test suite against the patched clone
+	@bin/link-sdk upstream/symfony-ai/src/mcp-bundle
+	cd upstream/symfony-ai/src/mcp-bundle && vendor/bin/phpunit

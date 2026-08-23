@@ -40,12 +40,13 @@ mcp:
                 store: file
                 # directory defaults to %kernel.cache_dir%/mcp-sessions/conference
 
-            tools:
-                - 'App\Mcp\Tool\Programme\'
-            prompts: ['*']
-            resources: ['*']
-            resource_templates: ['*']
-            apps: ['*']
+            registry:
+                tools:
+                    - 'App\Mcp\Tool\Programme\'
+                prompts: ['*']
+                resources: ['*']
+                resource_templates: ['*']
+                apps: ['*']
 
         # The privileged face: it can write. Guarded by config/packages/security.yaml.
         organizer:
@@ -69,13 +70,14 @@ mcp:
             session:
                 store: file
 
-            tools:
-                - 'App\Mcp\Tool\Programme\'
-                - 'App\Mcp\Tool\Organizer\'
-            prompts: ['*']
-            resources: ['*']
-            resource_templates: ['*']
-            apps: ['*']
+            registry:
+                tools:
+                    - 'App\Mcp\Tool\Programme\'
+                    - 'App\Mcp\Tool\Organizer\'
+                prompts: ['*']
+                resources: ['*']
+                resource_templates: ['*']
+                apps: ['*']
 
         # The workbench: tools that exist to be poked at while developing against
         # the SDK and the bundle. Never exposed over STDIO — nothing here is
@@ -100,8 +102,9 @@ mcp:
                 store: cache
                 ttl: 900
 
-            tools:
-                - 'App\Mcp\Tool\Diagnostics\'
+            registry:
+                tools:
+                    - 'App\Mcp\Tool\Diagnostics\'
 
         # The 2026-07-28 lifecycle. No initialize, no session, no server-initiated
         # requests — every request carries its own protocol version and client
@@ -162,13 +165,14 @@ mcp:
             # the SDK branch into its own PR, so nothing on the tracked branch
             # implements it — see docs/patches.md.
 
-            tools:
-                - 'App\Mcp\Tool\Modern\'
-                - 'App\Mcp\Tool\Programme\'
-            prompts: ['*']
-            resources: ['*']
-            resource_templates: ['*']
-            apps: ['*']
+            registry:
+                tools:
+                    - 'App\Mcp\Tool\Modern\'
+                    - 'App\Mcp\Tool\Programme\'
+                prompts: ['*']
+                resources: ['*']
+                resource_templates: ['*']
+                apps: ['*']
 
     # ------------------------------------------------------------------------
     # Clients: the remote MCP servers this application reaches out to.

@@ -13,10 +13,10 @@ capability from it exactly as `sampling` and `elicitation` already do.
 handler behind it was never useful; `roots: 'App\...'` replaces it.
 
 diff --git a/src/mcp-bundle/config/options.php b/src/mcp-bundle/config/options.php
-index 3f140a1b..cec66911 100644
+index 07bdedbb..a3cd070a 100644
 --- a/src/mcp-bundle/config/options.php
 +++ b/src/mcp-bundle/config/options.php
-@@ -141,13 +205,16 @@ return static function (DefinitionConfigurator $configurator): void {
+@@ -175,13 +239,16 @@ return static function (DefinitionConfigurator $configurator): void {
                              ->defaultNull()
                          ->end()
                          ->arrayNode('capabilities')
@@ -37,7 +37,7 @@ index 3f140a1b..cec66911 100644
                              ->defaultNull()
 
 diff --git a/src/mcp-bundle/src/McpBundle.php b/src/mcp-bundle/src/McpBundle.php
-index f6136243..971e85ab 100644
+index 6b8f9e68..c9a55df4 100644
 --- a/src/mcp-bundle/src/McpBundle.php
 +++ b/src/mcp-bundle/src/McpBundle.php
 @@ -15,16 +15,17 @@ use Mcp\Capability\Attribute\McpPrompt;
@@ -84,7 +84,7 @@ index f6136243..971e85ab 100644
              $definition->addMethodCall('addRequestHandler', [
                  new Definition(SamplingRequestHandler::class, [new Reference($client['sampling']), $logger]),
 diff --git a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
-index 5e4c7fb5..69f290ac 100644
+index 9d8413e1..510d3aca 100644
 --- a/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
 +++ b/src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php
 @@ -14,6 +14,7 @@ namespace Symfony\AI\McpBundle\Tests\DependencyInjection;

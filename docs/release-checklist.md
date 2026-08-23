@@ -342,17 +342,18 @@ $ make check
 | | |
 |---|---|
 | Version tagged | |
-| `mcp/sdk` ref | `2026spec-findings` @ |
-| `symfony/mcp-bundle` ref | `mcp-bundle-servers-and-clients` @ |
+| `mcp/sdk` ref | Packagist `dev-main` @ |
+| `symfony/mcp-bundle` ref | `symfony/ai` `main` @ |
 | Phases run | 0–7 / 0–3 + 7 |
 | Deviations | |
 
-Record the two upstream commit SHAs — the demo is pinned to branches, not
-releases, so "which commit did this pass against" is the only meaningful answer
-to "does this still work".
+Record both upstream commit SHAs — the demo tracks moving tips, not releases, so
+"which commit did this pass against" is the only meaningful answer to "does this
+still work". The SDK's is in `composer.lock` rather than a clone, because it is
+installed rather than checked out.
 
 ```console
-$ git -C upstream/php-sdk rev-parse --short HEAD
+$ composer info mcp/sdk | grep source
 $ git -C upstream/symfony-ai rev-parse --short HEAD
 ```
 
