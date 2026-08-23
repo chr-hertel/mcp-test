@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7d2dce22e4d941177d5135679e212564",
+    "content-hash": "951e292e11b399509a94bb61285a176c",
     "packages": [
         {
             "name": "doctrine/collections",
@@ -1125,11 +1125,17 @@
         },
         {
             "name": "mcp/sdk",
-            "version": "0.7.99",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/modelcontextprotocol/php-sdk.git",
+                "reference": "c882401ee7a3518d187fbbb3c3df0108de953db5"
+            },
             "dist": {
-                "type": "path",
-                "url": "upstream/php-sdk",
-                "reference": "89d5e1ef8a06e2deacf4ac6da8a47c69d180c610"
+                "type": "zip",
+                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/c882401ee7a3518d187fbbb3c3df0108de953db5",
+                "reference": "c882401ee7a3518d187fbbb3c3df0108de953db5",
+                "shasum": ""
             },
             "require": {
                 "ext-fileinfo": "*",
@@ -1146,6 +1152,7 @@
                 "psr/http-server-handler": "^1.0",
                 "psr/http-server-middleware": "^1.0",
                 "psr/log": "^1.0 || ^2.0 || ^3.0",
+                "symfony/deprecation-contracts": "^2.5 || ^3.0",
                 "symfony/uid": "^5.4 || ^6.4 || ^7.3 || ^8.0"
             },
             "require-dev": {
@@ -1170,37 +1177,14 @@
             "suggest": {
                 "symfony/finder": "Required for file-based discovery."
             },
+            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
                     "Mcp\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Mcp\\Example\\Server\\CachedDiscovery\\": "examples/server/cached-discovery/",
-                    "Mcp\\Example\\Server\\ClientCommunication\\": "examples/server/client-communication/",
-                    "Mcp\\Example\\Server\\ClientLogging\\": "examples/server/client-logging/",
-                    "Mcp\\Example\\Server\\CombinedRegistration\\": "examples/server/combined-registration/",
-                    "Mcp\\Example\\Server\\Elicitation\\": "examples/server/elicitation/",
-                    "Mcp\\Example\\Server\\ComplexToolSchema\\": "examples/server/complex-tool-schema/",
-                    "Mcp\\Example\\Server\\Conformance\\": "examples/server/conformance/",
-                    "Mcp\\Example\\Server\\CustomDependencies\\": "examples/server/custom-dependencies/",
-                    "Mcp\\Example\\Server\\CustomMethodHandlers\\": "examples/server/custom-method-handlers/",
-                    "Mcp\\Example\\Server\\DiscoveryCalculator\\": "examples/server/discovery-calculator/",
-                    "Mcp\\Example\\Server\\DiscoveryUserProfile\\": "examples/server/discovery-userprofile/",
-                    "Mcp\\Example\\Server\\EnvVariables\\": "examples/server/env-variables/",
-                    "Mcp\\Example\\Server\\ExplicitRegistration\\": "examples/server/explicit-registration/",
-                    "Mcp\\Example\\Server\\McpApps\\": "examples/server/mcp-apps/",
-                    "Mcp\\Example\\Server\\OAuthKeycloak\\": "examples/server/oauth-keycloak/",
-                    "Mcp\\Example\\Server\\OAuthMicrosoft\\": "examples/server/oauth-microsoft/",
-                    "Mcp\\Example\\Server\\SchemaShowcase\\": "examples/server/schema-showcase/",
-                    "Mcp\\Tests\\": "tests/"
-                },
-                "classmap": [
-                    "tests/Unit/Capability/Discovery/Fixtures/AlternativeFileNameToolHandler.class.inc"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "Apache-2.0"
             ],
@@ -1219,10 +1203,11 @@
                 }
             ],
             "description": "Model Context Protocol SDK for Client and Server applications in PHP",
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
+                "source": "https://github.com/modelcontextprotocol/php-sdk/tree/main"
+            },
+            "time": "2026-08-22T11:08:17+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -6551,16 +6536,16 @@
         },
         {
             "name": "symfony/uid",
-            "version": "v7.4.9",
+            "version": "v7.4.17",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/uid.git",
-                "reference": "2676b524340abcfe4d6151ec698463cebafee439"
+                "reference": "69d732355a139c6f8881337d28515aa01f12b8be"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/uid/zipball/2676b524340abcfe4d6151ec698463cebafee439",
-                "reference": "2676b524340abcfe4d6151ec698463cebafee439",
+                "url": "https://api.github.com/repos/symfony/uid/zipball/69d732355a139c6f8881337d28515aa01f12b8be",
+                "reference": "69d732355a139c6f8881337d28515aa01f12b8be",
                 "shasum": ""
             },
             "require": {
@@ -6605,7 +6590,7 @@
                 "uuid"
             ],
             "support": {
-                "source": "https://github.com/symfony/uid/tree/v7.4.9"
+                "source": "https://github.com/symfony/uid/tree/v7.4.17"
             },
             "funding": [
                 {
@@ -6625,7 +6610,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-04-30T15:19:22+00:00"
+            "time": "2026-08-11T07:38:58+00:00"
         },
         {
             "name": "symfony/validator",
@@ -9729,9 +9714,18 @@
             "time": "2025-11-17T20:03:58+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "mcp/sdk",
+            "version": "dev-main",
+            "alias": "0.7.99",
+            "alias_normalized": "0.7.99.0"
+        }
+    ],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "mcp/sdk": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

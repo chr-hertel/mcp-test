@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The point of this repository is to notice when the upstream branches move.
+  # The point of this repository is to notice when upstream moves.
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
@@ -35,14 +35,18 @@ jobs:
           # 30s would kill the process mid-fiber.
           ini-values: max_execution_time=0, memory_limit=512M
 
-      - name: Clone the upstream branches and apply the patches
+      - name: Clone symfony/ai and apply the patches
         run: make upstream
 
-      - name: Fail if either upstream branch has moved
+      - name: Fail if the upstream branch has moved
         # The whole point of the nightly run: `make upstream` clones the branch
-        # tips, so a patch that no longer fits them fails there — and this
-        # compares the clones against the tips once more, in case the branch
-        # moved between the clone and now.
+        # tip, so a patch that no longer fits it fails there — and this compares
+        # the clone against the tip once more, in case the branch moved between
+        # the clone and now.
+        #
+        # mcp/sdk needs no equivalent: it comes from Packagist as "dev-main", so
+        # composer resolves the current tip on every run and a break shows up as
+        # a failing check rather than as drift.
         run: make upstream-check
 
       - uses: ramsey/composer-install@v3
@@ -70,7 +74,7 @@ jobs:
           MCP_DEMO_BASE_URL: http://127.0.0.1:8099
 
   upstream:
-    name: Upstream suites, patched
+    name: Upstream suite, patched
     runs-on: ubuntu-latest
 
     steps:
@@ -82,17 +86,18 @@ jobs:
           extensions: ctype, iconv, fileinfo
           coverage: none
 
-      - name: Clone the upstream branches and apply the patches
+      - name: Clone symfony/ai and apply the patches
         run: make upstream
 
-      - name: mcp/sdk
-        working-directory: upstream/php-sdk
-        run: |
-          composer install --no-interaction --no-progress
-          vendor/bin/phpunit --testsuite=unit
+      # bin/link-sdk points the bundle at the mcp/sdk this demo installed, so
+      # the bundle's own suite and ours cannot disagree about which SDK they
+      # mean — and the patched bundle needs the 2026-07-28 surface, which the
+      # "^0.7" its composer.json asks for does not have.
+      - uses: ramsey/composer-install@v3
 
       - name: symfony/mcp-bundle
-        working-directory: upstream/symfony-ai/src/mcp-bundle
-        run: |
-          composer install --no-interaction --no-progress
-          vendor/bin/phpunit
+        run: make upstream-test
+
+      # No mcp/sdk job: we carry no patches against it, so its suite is not ours
+      # to run. Packagist "dev-main" means every run above already resolves its
+      # current tip.
