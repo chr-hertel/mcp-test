@@ -53,9 +53,10 @@ regression suite able to assert on them.
 `mcp.yaml` can be namespace prefixes:
 
 ```yaml
-tools:
-    - 'App\Mcp\Tool\Programme\'
-    - 'App\Mcp\Tool\Organizer\'
+registry:
+    tools:
+        - 'App\Mcp\Tool\Programme\'
+        - 'App\Mcp\Tool\Organizer\'
 ```
 
 A tool moves between servers by moving between namespaces, and the compiler pass

@@ -10,7 +10,7 @@ code.
 `upstream/` is gitignored and must exist:
 
 ```console
-$ make upstream    # clone both branches, apply patches/
+$ make upstream    # clone symfony/ai, apply patches/
 $ make setup       # composer install + seed dev, test and prod
 ```
 
@@ -19,7 +19,7 @@ $ make setup       # composer install + seed dev, test and prod
 ```console
 $ make check                        # PHPUnit + regression over STDIO — no web server
 $ make serve && make regression     # adds the three HTTP connections
-$ make upstream-test                # the upstream suites, against the patched clones
+$ make upstream-test                # the bundle's own suite, against the patched clone
 ```
 
 `make check` is the gate. It needs no network and no web server, because the
@@ -43,10 +43,12 @@ count or adds a scenario belongs in that file too.
 
 ## Changing the upstream libraries
 
-Edit the clones under `upstream/` directly, then keep `patches/` in sync — the
-clones are disposable, the patches are the artefact:
+`mcp/sdk` comes from Packagist as `dev-main` and carries no patches — if it needs
+one, that is a finding to raise upstream, not something to vendor here. The
+bundle is a clone under `upstream/`, and there `patches/` is the artefact while
+the clone is disposable:
 
-1. make the change in `upstream/php-sdk` or `upstream/symfony-ai`;
+1. make the change in `upstream/symfony-ai`;
 2. add or update a test **in that upstream repository**, and run its own suite;
 3. re-export the patch (`make export-patches` dumps the working tree; split and
    name it by logical change, one concern per file);
@@ -57,10 +59,10 @@ clones are disposable, the patches are the artefact:
 
 A patch that leaves an upstream suite red is not finished.
 
-**When a branch moves under you** (`make upstream-check` says `MOVED`, or
+**When the branch moves under you** (`make upstream-check` says `MOVED`, or
 `make apply-patches` says `FAILED`):
 
-1. `git -C upstream/<clone> fetch origin <ref> && git -C upstream/<clone> reset --hard FETCH_HEAD`
+1. `git -C upstream/symfony-ai fetch origin main && git -C upstream/symfony-ai reset --hard FETCH_HEAD`
 2. re-apply the series; the ones that still fit will, the rest you re-derive by
    hand against the new tip
 3. run that repository's own suite, then `make check`
@@ -68,7 +70,7 @@ A patch that leaves an upstream suite red is not finished.
 5. note the move in `docs/patches.md` if it changed anything semantic
 
 Do not pin the clone to an old SHA to make a patch fit. The demo exists to track
-the branches; a patch that no longer applies is the finding.
+the tip; a patch that no longer applies is the finding.
 
 If a behaviour is arguable rather than broken, do **not** patch it. Pin it with
 a regression check so a future change is visible, and record it under
@@ -78,7 +80,7 @@ a regression check so a future change is visible, and record it under
 
 - Put a tool in the namespace matching the server that should expose it:
   `App\Mcp\Tool\Programme\` (read-only), `\Organizer\` (writes), `\Diagnostics\`
-  (protocol probes). The capability lists in `config/packages/mcp.yaml` are
+  (protocol probes). The `registry:` lists in `config/packages/mcp.yaml` are
   namespace prefixes, and a prefix matching nothing fails the build.
 - Throw `ToolCallException` for anything the model could plausibly fix. Any
   other throwable becomes an opaque protocol error — see `docs/patches.md`.
