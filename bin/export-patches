@@ -31,8 +31,8 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CLONE = ROOT / "upstream/symfony-ai"
 PATCH_DIR = ROOT / "patches/mcp-bundle"
-REPO_URL = "https://github.com/chr-hertel/ai.git"
-BRANCH = "mcp-bundle-servers-and-clients"
+REPO_URL = "https://github.com/symfony/ai.git"
+BRANCH = "main"
 
 # Which patch a change belongs to. Markers must be unique to one feature: a
 # contiguous block matching two patches is rejected rather than guessed at,
@@ -274,6 +274,12 @@ def split_by_owner(path: str, hunk: str) -> dict[str, str]:
 
 def build() -> dict[str, str]:
     """The four patch bodies, keyed by file name."""
+    # A patch that creates a file leaves it untracked, and `git diff` does not
+    # report untracked files — so without this the export silently comes up
+    # short by exactly the new files, and the verification below cannot catch
+    # it: it compares two `git diff` outputs, and both would omit them.
+    git("add", "--intent-to-add", "--", "src/mcp-bundle")
+
     paths = git("diff", "--name-only").split()
     if not paths:
         sys.exit("upstream/symfony-ai has no working changes to export.")
@@ -359,7 +365,7 @@ def verify(bodies: dict[str, str]) -> None:
 
         # Semantic: that tree actually works. This is the check that matters.
         bundle = clone / "src/mcp-bundle"
-        print("  installing the bundle's dependencies against the SDK clone…")
+        print("  installing the bundle's dependencies against the installed SDK…")
         # The bundle requires mcp/sdk ^0.7, which resolves to the release — and the
         # release does not have the 2026-07-28 surface patch 0005 uses.
         subprocess.run([str(ROOT / "bin/link-sdk"), str(bundle)], check=True, capture_output=True)
