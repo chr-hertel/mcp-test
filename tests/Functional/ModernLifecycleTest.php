@@ -12,9 +12,11 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 /**
  * Protocol revision 2026-07-28 over Symfony's test browser.
  *
- * The `modern` server is `StatelessProtocol` on `StatelessHttpTransport`, and the
- * things worth pinning are the ones the revision changed: what a request has to
- * carry, what a server may answer with, and what is simply gone.
+ * The `modern` server is one server object carrying both eras, served by the same
+ * `McpController` as every other: the SDK classifies each request and routes it to
+ * the leg it belongs to. So the things worth pinning are the ones the revision
+ * changed — what a request has to carry, what a server may answer with, and what is
+ * simply gone — plus where the shared endpoint shows through.
  *
  * The wire-level round trips against a running server live in
  * {@see \App\Mcp\Regression\ModernRegressionRunner}; these are the ones that
@@ -78,14 +80,54 @@ final class ModernLifecycleTest extends McpTestCase
 
     public function testAnUnsupportedVersionIsRefusedWithTheSupportedSet(): void
     {
+        // A revision the SDK does not know cannot have been negotiated through a
+        // handshake, so it is the modern leg that answers — and -32022 carries what
+        // the server does speak, so a client can retry.
+        $envelope = $this->rpc('tools/list', meta: [
+            'io.modelcontextprotocol/protocolVersion' => '2027-01-01',
+            'io.modelcontextprotocol/clientCapabilities' => [],
+        ], protocolHeader: '2027-01-01');
+
+        $this->assertArrayHasKey('error', $envelope);
+        $this->assertSame(-32022, $envelope['error']['code']);
+        $this->assertSame(['2026-07-28'], $envelope['error']['data']['supported']);
+    }
+
+    public function testAHandshakeRevisionReachesTheOtherLegOfTheSameEndpoint(): void
+    {
+        // `protocol_versions: ['2026-07-28']` narrows the modern leg to that one
+        // revision; it does not close the handshake leg, which the SDK gives no way
+        // to narrow at all. So a client naming a handshake revision is not told the
+        // version is unsupported — it is served by the era that owns it, and told it
+        // has no session. See docs/patches.md.
         $envelope = $this->rpc('tools/list', meta: [
             'io.modelcontextprotocol/protocolVersion' => '2025-11-25',
             'io.modelcontextprotocol/clientCapabilities' => [],
         ], protocolHeader: '2025-11-25');
 
         $this->assertArrayHasKey('error', $envelope);
-        // -32022 carries what the server does speak, so a client can retry.
-        $this->assertSame(-32022, $envelope['error']['code']);
+        $this->assertSame(-32600, $envelope['error']['code']);
+        $this->assertStringContainsString('session id', $envelope['error']['message']);
+
+        // And the starkest form of it: `initialize` is gone from this revision, but a
+        // request that makes no modern claim never reaches the leg it is gone from. The
+        // endpoint hands back a handshake-era session on a revision it does not list.
+        $this->client->request('POST', self::ENDPOINT, server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json, text/event-stream',
+        ], content: json_encode([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => '2025-06-18',
+                'capabilities' => [],
+                'clientInfo' => ['name' => 'handshake-probe', 'version' => '1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $handshake = json_decode((string) $this->client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('2025-06-18', $handshake['result']['protocolVersion']);
     }
 
     public function testTheRequiredCacheHintsArePresent(): void
@@ -194,13 +236,19 @@ final class ModernLifecycleTest extends McpTestCase
         $this->assertSame(-32601, $envelope['error']['code']);
     }
 
-    public function testTheEndpointAcceptsPostOnly(): void
+    public function testTheModernEraIsPostOnly(): void
     {
-        // There is no session to open a stream on, and none to tear down.
-        foreach (['GET', 'DELETE'] as $method) {
-            $this->client->request($method, self::ENDPOINT);
-            $this->assertSame(405, $this->client->getResponse()->getStatusCode(), $method);
-        }
+        // The classifier routes every GET and DELETE to the handshake leg without
+        // looking further: they are that era's session operations, and the modern
+        // era has neither. So what answers here is the handshake leg failing to find
+        // a session, not the modern one refusing a method — which is exactly the
+        // shape of a shared endpoint, and the reason a modern client only ever POSTs.
+        $this->client->request('GET', self::ENDPOINT);
+        $this->assertSame(405, $this->client->getResponse()->getStatusCode());
+
+        $this->client->request('DELETE', self::ENDPOINT);
+        $this->assertSame(400, $this->client->getResponse()->getStatusCode());
+        $this->assertStringContainsString('Mcp-Session-Id', (string) $this->client->getResponse()->getContent());
     }
 
 
