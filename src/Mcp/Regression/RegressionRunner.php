@@ -179,6 +179,32 @@ final class RegressionRunner
             return \sprintf('%d tool(s), all with an object input schema', \count($this->tools));
         });
 
+        if ($this->hasTool('search_talks')) {
+            $this->check('tools', 'a nullable parameter keeps the array type form', function (): string {
+                // Pinned, not asserted as correct. `?string $query` generates
+                // `type: ["null","string"]`, which is legal JSON Schema but which
+                // the Inspector warns about: clients that read `type` as a string
+                // either reject the tool or drop the constraint. If the SDK ever
+                // moves to `anyOf`, this is where it becomes visible.
+                $schema = $this->toolNamed('search_talks')->inputSchema;
+                $type = $schema['properties']['query']['type'] ?? null;
+
+                if (!\is_array($type)) {
+                    throw new \RuntimeException(\sprintf(
+                        'The nullable "query" parameter no longer generates an array type, but %s — see docs/patches.md.',
+                        json_encode($type),
+                    ));
+                }
+
+                sort($type);
+                if (['null', 'string'] !== $type) {
+                    throw new \RuntimeException(\sprintf('Unexpected type for "query": %s.', json_encode($type)));
+                }
+
+                return 'query: type ["null","string"], not anyOf';
+            });
+        }
+
         $this->check('tools', 'pagination follows the cursor', function () use ($connection): string {
             $firstPage = $connection->listTools();
             $paged = \count($connection->getTools());
@@ -916,6 +942,17 @@ final class RegressionRunner
         }
 
         throw new \RuntimeException(\sprintf('Tool "%s" was not advertised in tools/list.', $name));
+    }
+
+    private function toolNamed(string $name): Tool
+    {
+        foreach ($this->tools as $tool) {
+            if ($tool->name === $name) {
+                return $tool;
+            }
+        }
+
+        throw new \RuntimeException(\sprintf('No tool named "%s" is advertised.', $name));
     }
 
     private function hasTool(string $name): bool
