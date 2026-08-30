@@ -249,13 +249,9 @@ final class ModernRegressionRunner
         $carried = [];
 
         $this->check('subscriptions', 'the acknowledgment opens the stream, on the request\'s own id', function () use ($client, $everything, &$carried): string {
-            // The provocation is an ordinary request on a second connection:
-            // HouseKeepingLoader registers its elements on every server build, and
-            // the registry announces every registration. If that ever stops being
-            // true, this needs a real mutation to provoke — but the demo has no
-            // tool that changes the registry, so the notification would then be
-            // untestable rather than absent.
-            $carried = $client->listen('sub-demo', $everything, whileOpen: fn () => $client->request('tools/list'));
+            // `announce_tool` on a second connection is a real registry change, and
+            // since mcp/sdk 0.8.1 nothing else on this server writes to the bus.
+            $carried = $client->listen('sub-demo', $everything, whileOpen: fn () => $client->callTool('announce_tool'));
 
             $this->acknowledgment($carried, 'sub-demo');
 

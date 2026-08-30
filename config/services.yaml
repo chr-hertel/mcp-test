@@ -34,6 +34,12 @@ services:
             $registries: '@mcp.server_locator.registry'
         tags: ['controller.service_arguments']
 
+    # The per-server registry is not autowirable, so the one tool that changes it
+    # names the modern server's explicitly.
+    App\Mcp\Tool\Modern\RegistryChangeTool:
+        arguments:
+            $registry: '@mcp.server.modern.registry'
+
     App\Command\McpRegressionCommand:
         arguments:
             $modernEndpoint: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
