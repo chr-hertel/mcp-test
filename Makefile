@@ -15,10 +15,12 @@ SERVER_WORKERS ?= 6
 # mcp/sdk comes from Packagist: the 2026-07-28 surface is on its main branch and
 # we carry no patches against it, so a clone would only be a slower copy of what
 # composer already installs. The constraint is aliased because symfony/mcp-bundle
-# still requires "^0.7", which no dev branch satisfies on its own.
+# requires "^0.8.1", which no dev branch satisfies on its own.
 #
-# symfony/mcp-bundle stays a clone, because patches/ still has four patches that
-# main does not carry. See docs/patches.md.
+# symfony/mcp-bundle stays a clone because the 2026-07-28 surface is only on
+# main, not in any release. patches/ is empty right now — everything this demo
+# found has landed — but the machinery stays, because the next finding will need
+# it. See docs/patches.md.
 BUNDLE_REPO := https://github.com/symfony/ai.git
 BUNDLE_REF  := main
 
@@ -165,6 +167,10 @@ regression-2026: ## Run the 2026-07-28 checks only (needs `make serve`)
 check: test regression-stdio ## Everything that runs without a web server
 
 .PHONY: upstream-test
-upstream-test: ## Run symfony/mcp-bundle's own test suite against the patched clone
+upstream-test: ## Run symfony/mcp-bundle's own suite and PHPStan against the clone
 	@bin/link-sdk upstream/symfony-ai/src/mcp-bundle
 	cd upstream/symfony-ai/src/mcp-bundle && vendor/bin/phpunit
+	# Upstream gates on PHPStan too, and it catches what PHPUnit cannot: a
+	# fixture whose constructor argument was never read sat in the series for
+	# weeks, green here and red the moment it reached a pull request.
+	cd upstream/symfony-ai/src/mcp-bundle && vendor/bin/phpstan analyse --no-progress -c phpstan.dist.neon

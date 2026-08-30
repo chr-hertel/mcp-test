@@ -6,7 +6,7 @@ time, built on the upstream it is meant to exercise:
 | Package | Source | Why |
 |---|---|---|
 | [`mcp/sdk`](https://github.com/modelcontextprotocol/php-sdk) | Packagist, `dev-main` | The 2026-07-28 surface is on `main` and we carry no patches against it. |
-| [`symfony/mcp-bundle`](https://github.com/symfony/ai) | clone of `main` + `patches/` | Six patches `main` does not carry yet. |
+| [`symfony/mcp-bundle`](https://github.com/symfony/ai) | clone of `main` | Everything this demo needed has landed; `patches/` is empty. |
 
 Both track a moving tip on purpose: `dev-main` re-resolves on every install, and
 `make upstream-check` fails the moment the bundle's `main` moves past the clone.
@@ -17,7 +17,7 @@ page is MCP.
 
 The demo points its own client at its own servers. That is what makes
 `make regression` a real end-to-end check of both libraries rather than a set of
-mocks agreeing with each other, and it is how the seven upstream problems in
+mocks agreeing with each other, and it is how the upstream problems in
 [`docs/patches.md`](docs/patches.md) were found.
 
 ```console
@@ -66,13 +66,13 @@ $ make serve         # http://127.0.0.1:8099
 
 ### Protocol revision 2026-07-28
 
-The point of the SDK branch, and a different lifecycle rather than a flag: no
-`initialize`, no session, and — the part that reshapes handler code — no
-server-initiated requests.
+No `initialize`, no session, and — the part that reshapes handler code — no
+server-initiated requests. Not a mode a server is in: the SDK classifies each
+request and routes it to the era it belongs to, so one endpoint serves both.
 
 | Concept | Where |
 |---|---|
-| A stateless server, mounted on `StatelessHttpTransport` | `modern` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| A server narrowed to the revision, on the same controller as the rest | `protocol_versions` on `modern` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Per-request protocol version, capabilities and trace context | [`ModernLifecycleTool::describeRequest()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | **MRTR** — returning the ask instead of sending it, with signed `requestState` | [`ModernLifecycleTool::submitProposal()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | Cache hints (`ttlMs` / `cacheScope`), which the revision requires | `cache:` in [`mcp.yaml`](config/packages/mcp.yaml) |
@@ -81,10 +81,15 @@ server-initiated requests.
 | MCP Apps over the modern lifecycle | `apps:` on the `modern` server in [`mcp.yaml`](config/packages/mcp.yaml) |
 | The SDK's client on the modern wire — one option, same API | `protocol_version` on the `modern` client in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Subscriptions (SEP-2575) and the refusals a conforming client never triggers | [`ModernClient`](src/Mcp/Modern/ModernClient.php) |
+| A registry change announced to a stream another worker is holding open | [`RegistryChangeTool`](src/Mcp/Tool/Modern/RegistryChangeTool.php) |
 
-> **Tasks** (SEP-2663) used to be here too. The SDK branch carved it out into a
-> PR of its own, so the demo's tasks surface is parked until it lands —
+> **Tasks** (SEP-2663) used to be here too. The SDK carved it out into a PR of its
+> own, so the demo's tasks surface is parked until it lands —
 > [`docs/patches.md`](docs/patches.md) lists what to put back.
+>
+> The `Lifecycle` column above is what a server *answers for*, not a mode it is in.
+> `modern` narrows the modern leg to one revision; the handshake leg cannot be
+> narrowed at all, so it answers that era too — see [`docs/patches.md`](docs/patches.md).
 
 Compare `submit_proposal` on the two servers: the handshake-era one calls
 `$gateway->elicit()` and blocks; the modern one returns an `InputRequiredResult`
@@ -119,7 +124,7 @@ exposes is configuration, not code — see each server's `registry:` block in
 | `conference` | `/mcp` | handshake | yes | everything read-only, plus the MCP App |
 | `organizer` | `/mcp/organizer` | handshake | yes | the above plus scheduling, the CFP inbox and workspace imports |
 | `diagnostics` | `/mcp/diagnostics` | handshake | no | protocol probes, progress streams and tools that fail on purpose |
-| `modern` | `/mcp/2026` | **stateless** | no | the same programme over protocol revision **2026-07-28** |
+| `modern` | `/mcp/2026` | **2026-07-28**, and handshake | no | the same programme over protocol revision **2026-07-28** |
 
 `organizer` sits behind a bearer-token firewall over HTTP. Over STDIO it is
 unauthenticated: the process boundary *is* the boundary there, and whoever
@@ -280,8 +285,8 @@ src/Mcp/Completion/          argument completion providers
 src/Mcp/Client/              the client-side handlers: roots, sampling, elicitation
 src/Mcp/Regression/          the regression runner
 templates/mcp/               the MCP App shell and its fragments
-patches/                     what had to change upstream, and why
-upstream/                    the two branch clones (gitignored; `make upstream`)
+patches/                     what had to change upstream (empty; all of it landed)
+upstream/                    the symfony/ai clone (gitignored; `make upstream`)
 workspace/                   the CFP inbox the client advertises as a root
 ```
 

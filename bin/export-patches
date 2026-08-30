@@ -39,63 +39,16 @@ BRANCH = "main"
 # because guessing is what lost a hunk and shipped a half-applied series.
 #
 # A third element lists *decisive* markers, for the case where uniqueness is not
-# achievable: a patch built on another's feature has to name it. The fix to a
-# subscription bus is written in the vocabulary of the patch that added the bus,
-# so a block carrying both is not ambiguous — it belongs to the later one, and
-# says so with a marker only it can carry.
+# achievable: a patch built on another's feature has to name it, and a block
+# carrying both then belongs to the later one rather than being ambiguous.
 #
-# Ownership stays per run, so keep a decisive marker off anything that shares a
-# run with the earlier patch and is not the later one's: 0006's `use` statement
-# lands between 0005's, and travels with them rather than dragging them along.
-PATCHES = [
-    (
-        "0001-client-roots-option.patch",
-        ["ListRootsRequestHandler", "['roots']", "'roots'", "roots/list"],
-    ),
-    (
-        "0002-connection-complete-and-protocol-version.patch",
-        ["CompletionCompleteResult", "sendRootsListChanged", "getProtocolVersion", "PromptReference"],
-    ),
-    (
-        "0003-client-target-alias.patch",
-        # Narrow: the *server* alias line matches "registerAliasForArgument" too,
-        # and patch 0005 rewrites the block it sits in.
-        ["McpClientInterface::class, $clientName"],
-    ),
-    (
-        "0004-container-backed-completion-providers.patch",
-        ["mcp.completion_provider", "CompletionProviderInterface", "completionProviders"],
-    ),
-    (
-        "0005-stateless-lifecycle.patch",
-        [
-            "lifecycle", "stateless", "Stateless", "buildStateless",
-            "protocol_versions", "request_state", "setRequestState",
-            "CachePolicy", "CacheScope", "cacheScope", "'cache'",
-            "NotificationBus", "notificationBus", "notification_bus",
-            "subscriptions", "setSubscriptionLifetime",
-            "TasksExtension", "TaskStore", "taskStore", "registerPsr16Fallback",
-            "$sessionId", "configureModernLifecycle",
-        ],
-    ),
-    (
-        "0006-registry-publishes-to-the-bus.patch",
-        ["registryDispatcher"],
-        ["registryDispatcher"],
-    ),
-]
+# Empty: every finding this demo made has landed upstream. The machinery stays
+# because the next one will need it, and because an empty list is what makes a
+# stray change in the clone an error rather than a silent export.
+PATCHES = []
 
 # When a file belongs wholly to one patch, say so rather than relying on markers.
-FILE_OWNER = {
-    "src/mcp-bundle/src/Client/ServerConnection.php": "0002-connection-complete-and-protocol-version.patch",
-    "src/mcp-bundle/src/Client/ServerConnectionInterface.php": "0002-connection-complete-and-protocol-version.patch",
-    "src/mcp-bundle/src/Controller/StatelessMcpController.php": "0005-stateless-lifecycle.patch",
-    "src/mcp-bundle/tests/DependencyInjection/McpBundleTest.php": "0005-stateless-lifecycle.patch",
-    "src/mcp-bundle/tests/DependencyInjection/McpBundleClientTest.php": "0001-client-roots-option.patch",
-    "src/mcp-bundle/tests/DependencyInjection/McpPassTest.php": "0004-container-backed-completion-providers.patch",
-    "src/mcp-bundle/src/DependencyInjection/McpPass.php": "0004-container-backed-completion-providers.patch",
-    "src/mcp-bundle/tests/DependencyInjection/McpBundleSubscriptionsTest.php": "0006-registry-publishes-to-the-bus.patch",
-}
+FILE_OWNER = {}
 
 
 def git(*args: str, cwd: pathlib.Path = CLONE, check: bool = True) -> str:
@@ -273,7 +226,7 @@ def split_by_owner(path: str, hunk: str) -> dict[str, str]:
 
 
 def build() -> dict[str, str]:
-    """The four patch bodies, keyed by file name."""
+    """The patch bodies, keyed by file name."""
     # A patch that creates a file leaves it untracked, and `git diff` does not
     # report untracked files — so without this the export silently comes up
     # short by exactly the new files, and the verification below cannot catch
@@ -366,8 +319,8 @@ def verify(bodies: dict[str, str]) -> None:
         # Semantic: that tree actually works. This is the check that matters.
         bundle = clone / "src/mcp-bundle"
         print("  installing the bundle's dependencies against the installed SDK…")
-        # The bundle requires mcp/sdk ^0.7, which resolves to the release — and the
-        # release does not have the 2026-07-28 surface patch 0005 uses.
+        # The bundle resolves mcp/sdk to a release; the demo tracks the branch. Linking
+        # is what keeps the two suites talking about the same SDK — see bin/link-sdk.
         subprocess.run([str(ROOT / "bin/link-sdk"), str(bundle)], check=True, capture_output=True)
         print("  running the bundle's test suite…")
         result = subprocess.run(
@@ -386,6 +339,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="verify but do not write")
     args = parser.parse_args()
+
+    # An empty series is where this repository wants to be: every finding has
+    # landed upstream. Only a clone that has drifted from the tip makes it a
+    # problem, and that is what is checked here.
+    if not PATCHES:
+        git("add", "--intent-to-add", "--", "src/mcp-bundle")
+        changed = git("diff", "--name-only").split()
+        if changed:
+            sys.exit(
+                "The series is empty, but upstream/symfony-ai carries changes:\n  "
+                + "\n  ".join(changed)
+                + "\n\nAdd them to PATCHES with markers that name them, or reset the clone."
+            )
+
+        print("The series is empty and the clone is clean — nothing to export.")
+        return
 
     print("Splitting the working changes…")
     bodies = build()

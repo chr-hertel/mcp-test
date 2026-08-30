@@ -50,10 +50,14 @@ run() {
 
     if ! printf '%s' "$output" | python3 -c "
 import json, sys
+# raw_decode, not load: the Inspector prints commentary of its own after the
+# result — a schema-portability summary since 2.3.0 — and json.load() on the
+# whole stream fails on it. The response is the first JSON value printed.
+raw = sys.stdin.read().lstrip()
 try:
-    d = json.load(sys.stdin)
+    d = json.JSONDecoder().raw_decode(raw)[0]
 except Exception:
-    sys.stderr.write('not JSON: ' + sys.stdin.read()[:300])
+    sys.stderr.write('not JSON: ' + raw[:300])
     raise SystemExit(1)
 print('    $green→$reset ' + str($summarise))
 "; then

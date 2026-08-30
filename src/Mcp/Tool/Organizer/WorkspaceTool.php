@@ -21,9 +21,9 @@ use Mcp\Server\RequestContext;
  * passing paths through tool arguments; hosts including Claude Desktop still
  * advertise them, so the round trip is worth showing.
  *
- * On the Symfony side this needs a client that actually answers `roots/list`.
- * The bundle grew a `clients.<name>.roots` option for that in
- * patches/mcp-bundle/0001-client-roots-option.patch — see docs/patches.md.
+ * On the Symfony side this needs a client that actually answers `roots/list`. The
+ * bundle grew a `clients.<name>.roots` option for that because of this demo — see
+ * docs/patches.md.
  */
 final class WorkspaceTool
 {

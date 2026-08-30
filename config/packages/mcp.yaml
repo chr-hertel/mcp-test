@@ -110,9 +110,13 @@ mcp:
         # requests — every request carries its own protocol version and client
         # capabilities, so any worker can answer any request.
         #
-        # It is a separate server rather than a flag on an existing one because
-        # the two lifecycles are different endpoints by design: a client detects
-        # which it is talking to, and one server definition can be mounted twice.
+        # A server is not in one era or the other: the SDK classifies each request
+        # and routes it to the lifecycle it belongs to, so every server above
+        # answers modern clients too, and this one still answers handshake ones.
+        # `protocol_versions` narrows the modern leg to the single revision, which
+        # is what makes this a clean subject for the regression suite; there is no
+        # way to narrow the handshake leg, so STDIO is off by choice rather than by
+        # configuration. See docs/patches.md.
         modern:
             name: 'symfonycon-2026'
             version: '1.0.0'
@@ -123,10 +127,9 @@ mcp:
                 There are no server-initiated requests here: `submit_proposal` returns the
                 question it needs answered and you call it again with the answer attached.
                 `describe_request` reports what your own request declared.
-            lifecycle: stateless
             protocol_versions: ['2026-07-28']
             transports:
-                stdio: false      # the revision is defined over HTTP; the config refuses stdio
+                stdio: false      # the revision is defined over HTTP; there is nothing here for STDIO to serve
                 http: true
             http:
                 path: /mcp/2026
