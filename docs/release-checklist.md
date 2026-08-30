@@ -43,26 +43,28 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **66 tests / 232 assertions OK**, then the STDIO regression:
-      `conference_stdio 35 passed`, `organizer_stdio 40 passed`, **0 failed**
+- [ ] `make check` → **67 tests / 238 assertions OK**, then the STDIO regression:
+      `conference_stdio 36 passed`, `organizer_stdio 41 passed`, **0 failed**
 - [ ] `make serve` — then `make regression` → all six connections plus the raw probes, **0 failed**
 
   | Connection | passed | skipped |
   |---|---|---|
-  | `conference_http` | 35 | 1 |
-  | `organizer_http` | 40 | 1 |
+  | `conference_http` | 36 | 1 |
+  | `organizer_http` | 41 | 1 |
   | `diagnostics_http` | 18 | 7 |
-  | `conference_stdio` | 35 | 1 |
-  | `organizer_stdio` | 40 | 1 |
-  | `modern_http` | 35 | 3 |
+  | `conference_stdio` | 36 | 1 |
+  | `organizer_stdio` | 41 | 1 |
+  | `modern_http` | 36 | 3 |
   | `modern (raw)` | 26 | 0 |
 
-- [ ] `make upstream-test` → `mcp/sdk` **1512 tests OK**, `symfony/mcp-bundle` **178 tests OK**
+- [ ] `make upstream-test` → `symfony/mcp-bundle` **197 tests OK**, PHPStan `No errors`
 
-  These run the *upstream* suites against the patched clones. A failure here
-  means a patch broke something, not that the demo did.
+  This runs the *bundle's own* suite and its static analysis against the clone,
+  with `bin/link-sdk` pointing it at the SDK the demo installed. A failure here
+  is upstream's or a patch's, not the demo's — and with `patches/` empty it can
+  only be upstream's.
 
-- [ ] `make upstream-check` → `up to date` for both clones
+- [ ] `make upstream-check` → `up to date` for the clone
 
   This fetches and compares against the branch tips. It is the one check here
   that talks to the network, and it has to: everything else in this phase runs
@@ -70,23 +72,25 @@ Nothing below this line is worth doing if these are red.
   perfectly green until phase 7.
 
   A `MOVED` line means the branch advanced. Re-derive the patches against the new
-  tip, re-run the upstream suites, re-export, and update `docs/patches.md` —
-  `CLAUDE.md` has the procedure.
+  tip, re-run the upstream suite, re-export, and update `docs/patches.md` —
+  `CLAUDE.md` has the procedure. With `patches/` empty there is nothing to
+  re-derive, but the clone still has to be moved and the suites re-run.
 
-- [ ] `make apply-patches` → `in place` or `overlaps` for all six, never `applied`
+- [ ] `make apply-patches` → silent
 
-  `in place` means the patch is already in the clone, `applied` is normal on a
-  fresh clone but suspicious here, and `overlaps` means the question cannot be
-  answered for that patch: its lines are context a later patch rewrote, so it
-  reverse-applies only together with them. **`FAILED` is fatal** — nothing in
-  the series fits either way, so upstream moved underneath it.
+  `patches/` is empty, so there is nothing to say. **`FAILED` is fatal** —
+  nothing in the series fits either way, so upstream moved underneath it. With a
+  patch back in the series, the verdict to expect here is `in place` or
+  `overlaps`, never `applied`: `applied` is normal on a fresh clone and
+  suspicious on one you have been working in.
 
-- [ ] `bin/export-patches --dry-run` → `the series reproduces the working tree`,
-      then the bundle's own suite green in the pristine clone
+- [ ] `bin/export-patches --dry-run` → `the series is empty and the clone is clean`
 
-  The authoritative version of the check above, and the only one that settles an
-  `overlaps`. It costs a clone and a `composer install`; the phase-1 gate does
-  not, which is why both are here.
+  With patches in the series this instead reports that the series reproduces the
+  working tree and runs the bundle's suite in a pristine clone — the
+  authoritative check, and the only one that settles an `overlaps`. Empty, it
+  still catches the one thing that matters: a change sitting in the clone that no
+  patch would carry.
 
 > The counts move whenever a check is added. If they are off by a few but
 > nothing failed, update this file rather than chasing it.
@@ -137,6 +141,18 @@ The reference client, which knows nothing about this application.
 - [ ] `make inspector-cli SERVER=diagnostics ARGS='--method tools/call --tool-name probe_client'`
       — `roots=true`, everything else `false`. That is the CLI being
       non-interactive, not a bug.
+
+- [ ] `tools/list` ends with `Schema portability: 0 errors, 9 warnings across 3 tools`
+
+  **0 errors** is the gate; the warnings are expected and explained in
+  [`patches.md`](patches.md) — the SDK spells a nullable parameter
+  `type: ["null","string"]` rather than `anyOf`. An error, or a warning count
+  that moved without the surface moving, is worth chasing.
+
+  `npx -y` always fetches the newest Inspector, so this line is also the place a
+  new version of the reference client first shows up. One already broke the tour:
+  the summary is printed after the JSON result, and the tour parsed the whole
+  stream. It now reads the first JSON value and ignores the commentary.
 
 ---
 
@@ -202,9 +218,14 @@ The reason the SDK branch exists. `make serve` first.
   result. Nothing arrives before the close — that is the server, not a hang.
 
 - [ ] In the Inspector UI, connect to `/mcp/2026` with version negotiation set to
-      **Auto** or **Modern (2026-07-28, sessionless)** — the default is *Legacy*,
-      which sends `initialize` and is refused with `-32602`. Then open
-      `browse_schedule`: the MCP App renders over the modern lifecycle too.
+      **Auto** or **Modern (2026-07-28, sessionless)**. Then open `browse_schedule`:
+      the MCP App renders over the modern lifecycle too.
+
+  The Inspector's default is *Legacy*, and on this endpoint that now **connects**
+  rather than failing: one endpoint serves both eras, and `protocol_versions`
+  narrows only the modern leg. If the session panel shows a `2025-06-18` handshake
+  against `symfonycon-2026`, the negotiation control is on *Legacy* and nothing
+  you see afterwards is the revision under test.
 
 > The Inspector's **CLI** has no flag for the era and is pinned to legacy, so
 > `make inspector-tour` covers only the handshake servers.
@@ -325,14 +346,15 @@ The thing most likely to be quietly broken, because nobody runs it twice.
 
 ```console
 $ git clone <this repo> /tmp/mcp-demo-check && cd /tmp/mcp-demo-check
-$ make upstream          # clones both branches, applies patches/
+$ make upstream          # clones symfony/ai, applies patches/ (currently empty)
 $ composer install
 $ make db
 $ make check
 ```
 
 - [ ] Every step succeeds with no manual intervention
-- [ ] `make upstream` reports `applied` for all six patches, not `skipped`
+- [ ] `make upstream` clones and completes silently — `patches/` is empty, so
+      there is nothing to apply
 - [ ] `make check` is green in the clone
 
 ---
