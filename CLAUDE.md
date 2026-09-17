@@ -19,6 +19,7 @@ $ make setup       # composer install + seed dev, test and prod
 ```console
 $ make check                        # PHPUnit + regression over STDIO — no web server
 $ make serve && make regression     # adds the three HTTP connections
+$ make chat                         # the chat host at /chat, in a browser
 $ make upstream-test                # the bundle's own suite, against the patched clone
 ```
 
@@ -91,6 +92,24 @@ a regression check so a future change is visible, and record it under
 - If a new concept is worth *showing*, add a step to `bin/inspector-tour` too —
   that script is the demo's guided tour, and it should stay complete.
 
+## Adding to the chat host
+
+`/chat` is the client half with a user in front of it: `src/Chat/` (the host),
+`src/Twig/Components/` (the page), `config/packages/ai.yaml` (the agent). Read
+`docs/chat.md` before changing any of it.
+
+- The chat must keep working with **no API key**. `ScriptedPlatform` is what makes
+  that true, and `make check` covers the whole path because of it — a change that
+  only works against a real model is a change that is not covered.
+- Anything the host learns about a server is read *from* the server at request
+  time (`HostSurface`). Do not hard-code a tool, prompt or resource into the page.
+- A capability the host does not advertise is a demonstration, not a gap: the
+  missing elicitation handler is why `submit_proposal` degrades there. Say so in
+  `docs/chat.md` rather than quietly adding a handler.
+- New behaviour needs a test next to the others in `tests/Unit/Chat` or
+  `tests/Functional/Chat*Test.php`, not a check in `RegressionRunner` — that suite
+  asserts what a *server* answers.
+
 ## Conventions
 
 - Fixture data is fixed and asserted on. Changing `ProgrammeSeeder` means
@@ -105,3 +124,6 @@ a regression check so a future change is visible, and record it under
 
 `config/packages/mcp.yaml` → `docs/architecture.md` → `docs/patches.md` →
 `src/Mcp/Regression/RegressionRunner.php`.
+
+For the host half: `config/packages/ai.yaml` → `docs/chat.md` →
+`src/Chat/ChatHost.php`.

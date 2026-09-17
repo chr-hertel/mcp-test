@@ -72,7 +72,7 @@ install: ## composer install (needs upstream/ to exist first)
 	composer install
 
 .PHONY: setup
-setup: install db ## Full first-run setup
+setup: install db assets ## Full first-run setup
 
 .PHONY: db
 db: ## Recreate and seed the dev, test and prod databases
@@ -83,6 +83,12 @@ db: ## Recreate and seed the dev, test and prod databases
 	# first — cache:clear warms as it goes, which is what a host needs anyway.
 	APP_ENV=prod $(CONSOLE) cache:clear
 	APP_ENV=prod $(CONSOLE) app:seed
+
+.PHONY: assets
+assets: ## Compile the chat's stylesheet and controllers for the prod environment
+	# Dev serves them straight out of assets/; prod wants them written to
+	# public/assets/ with their digests. Only the chat page needs any of this.
+	APP_ENV=prod $(CONSOLE) asset-map:compile
 
 # -- running -----------------------------------------------------------------
 
@@ -107,7 +113,7 @@ debug: ## List what every configured MCP server exposes
 
 .PHONY: clients
 clients: ## List the configured MCP clients and their servers
-	$(CONSOLE) mcp:client:debug
+	$(CONSOLE) debug:mcp --clients
 
 .PHONY: claude-config
 claude-config: ## Print the Claude Desktop configuration fragment
@@ -144,6 +150,14 @@ inspector-cli: ## One Inspector CLI call, e.g. make inspector-cli ARGS='--method
 .PHONY: inspector-tour
 inspector-tour: ## Walk the whole MCP surface through the Inspector CLI, over HTTP
 	@bin/inspector-tour
+
+# -- chat --------------------------------------------------------------------
+
+.PHONY: chat
+chat: serve ## Start the web server and print where the chat host runs
+	@echo "The chat host: http://127.0.0.1:$(PORT)/chat"
+	@echo "It answers with a scripted stand-in model unless MCP_DEMO_CHAT_PLATFORM says otherwise — see docs/chat.md."
+
 
 # -- checking ----------------------------------------------------------------
 

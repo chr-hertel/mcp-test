@@ -1,0 +1,48 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ prompt.title ?? prompt.name }} — MCP Demo{% endblock %}
+
+{% block body %}
+    <h1>{{ prompt.title ?? prompt.name }}</h1>
+    <p class="lede">
+        A prompt of the <strong>{{ server }}</strong> server. The server renders it from its own live
+        data when you run it, and the result becomes your turn in the conversation — the model never
+        sees this form, only what the server made of it.
+    </p>
+
+    <div class="panel">
+        {% if prompt.description %}
+            <p class="muted" style="margin-top:0">{{ prompt.description }}</p>
+        {% endif %}
+
+        <form class="prompt-form" method="post">
+            <input type="hidden" name="_token" value="{{ csrf_token('chat-prompt') }}">
+
+            {% for argument in prompt.arguments %}
+                <label>
+                    <span>
+                        <code>{{ argument.name }}</code>
+                        {% if argument.required %}<em>required</em>{% else %}<em>optional</em>{% endif %}
+                        {% if argument.description %}— {{ argument.description }}{% endif %}
+                    </span>
+                    <input type="text" name="argument_{{ argument.name }}"
+                           {{ argument.required ? 'required' : '' }}
+                           {% if completions[argument.name] is not empty %}list="values_{{ argument.name }}"{% endif %}>
+                    {% if completions[argument.name] is not empty %}
+                        {# completion/complete: the server's own suggestions for this argument #}
+                        <datalist id="values_{{ argument.name }}">
+                            {% for value in completions[argument.name] %}
+                                <option value="{{ value }}"></option>
+                            {% endfor %}
+                        </datalist>
+                    {% endif %}
+                </label>
+            {% else %}
+                <p class="muted">This prompt takes no arguments.</p>
+            {% endfor %}
+
+            <button type="submit">Run in the chat</button>
+            <a href="{{ path('chat') }}" style="margin-left:14px">Back</a>
+        </form>
+    </div>
+{% endblock %}

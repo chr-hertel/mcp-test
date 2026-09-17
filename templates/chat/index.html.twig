@@ -1,0 +1,15 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Chat — MCP Demo{% endblock %}
+
+{% block body %}
+    <h1>Chat</h1>
+    <p class="lede">
+        The other side of the demo: this application as an MCP <em>host</em>. The agent below has no
+        tools of its own — everything it can do it borrows from the servers on the right, over the
+        same protocol a desktop host would use, and it reaches them by spawning
+        <code>bin/console mcp:server</code> exactly as Claude Desktop does.
+    </p>
+
+    {{ component('chat') }}
+{% endblock %}

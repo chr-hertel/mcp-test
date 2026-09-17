@@ -37,6 +37,20 @@
                        │  app:mcp:regression        │
                        │  tests/Regression          │
                        └────────────────────────────┘
+
+                      … and the same servers, from the other side:
+
+                       ┌────────────────────────────┐
+                       │  mcp.clients.host          │
+                       │  conference + organizer,   │
+                       │  over STDIO                │
+                       └─────────────┬──────────────┘
+                                     │ symfony/ai-mcp-tool: a server *is* a toolbox
+                       ┌─────────────▼──────────────┐
+                       │  ai.agent.host (Symfony AI)│
+                       │  src/Chat: the host        │
+                       │  src/Twig/Components: /chat│
+                       └────────────────────────────┘
 ```
 
 ## Why the layers are where they are
@@ -76,13 +90,26 @@ what makes the regression suite an end-to-end check of both upstream libraries
 instead of a set of mocks agreeing with each other — and it is how the problems
 in [`patches.md`](patches.md) surfaced.
 
-Three clients, because two things are configured per client rather than per
-connection. The revision is one: `modern` sets
+Three of the four clients exist because two things are configured per client
+rather than per connection. The revision is one: `modern` sets
 `protocol_version: '2026-07-28'`, which is the whole of what puts the SDK's
 client on the modern wire, and the same suite then runs over both eras. The
 handlers are the other: `minimal` configures no roots, sampling or elicitation
 handler, so the same servers see a client that cannot do any of those, and the
 tools that need them have to degrade rather than fail.
+
+**A host, not just a client.** `src/Chat` is the demo pointed at its own servers
+from the outside: an agent whose every tool is a remote MCP tool, plus the two
+things an agent never does on its own — running a server's *prompt* because the
+user picked it, and attaching a server's *resource* because the user handed it
+over. Which is the whole distinction the protocol draws between its three
+primitives, and it only becomes visible once something has a user in front of it.
+
+It is a second client rather than a second use of `regression`, because the
+capabilities differ: the host answers `sampling/createMessage` with its own model
+and advertises no elicitation handler at all, so `submit_proposal` degrades there
+while it succeeds in the regression suite. Same server, same tool, two clients,
+two behaviours — see [`chat.md`](chat.md).
 
 ## The two ways to reach a server, and when to use which
 
@@ -137,9 +164,12 @@ derives its score from a CRC of the proposal title; `ScriptedElicitationHandler`
 answers from a script a test sets, falling back to the requested schema's own
 defaults so the demo also works when nobody scripted anything.
 
-Swapping in a real model is a one-class change: implement the same SDK interface
-over Symfony AI's `Agent`/`Platform` and point `mcp.clients.regression.sampling`
-at it.
+Swapping in a real model is a one-class change, and the chat host is that class:
+[`ModelSamplingHandler`](../src/Chat/Mcp/ModelSamplingHandler.php) implements the
+same SDK interface over Symfony AI's `Platform`, and `mcp.clients.host.sampling`
+points at it. It falls back to the scripted handler when no API key is
+configured, so the two clients answer identically out of the box and differently
+the moment there is a model — which is the point.
 
 Likewise the fixture programme in
 [`ProgrammeSeeder`](../src/Service/ProgrammeSeeder.php) is fixed data with fixed
