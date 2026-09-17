@@ -150,6 +150,20 @@ deployments should use the MCP authorization spec (OAuth 2.1 with
 protected-resource metadata); the SDK ships worked examples under
 `vendor/mcp/sdk/examples/server/oauth-keycloak` and `oauth-microsoft`.
 
+**A host pays the cold start twice.** The chat at `/chat` is itself an MCP
+client over STDIO ([`chat.md`](chat.md)), so every turn spawns one child process
+per connection and boots this application inside it. Two connections, two boots,
+per question. Nothing is wrong when a turn takes a second; a host that kept its
+connections open per session would not pay this, and holding them open across
+requests is exactly what point 5 says not to do in a worker.
+
+**The chat's assets.** `/chat` is the one page with a stylesheet and JavaScript
+of its own, served by the Asset Mapper. In `prod` they have to be written out
+first — `make assets` — and `public/` has to be served by a real web server.
+`php -S public/index.php` routes *everything* through PHP, so the compiled files
+never reach the browser; `symfony server:start`, nginx and Apache all serve them
+as files, which is what `make serve` gets you.
+
 **Cold start.** Every STDIO tool call in `dev` pays for a container check.
 Configure hosts with `APP_ENV=prod` and a warmed cache; the difference is the
 gap between a host that feels instant and one that times out on first use.

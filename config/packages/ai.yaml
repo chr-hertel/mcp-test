@@ -1,0 +1,66 @@
+# The chat host: this application as an MCP *client*, driving a model.
+#
+# Everything the model can do here comes from an MCP server — the agent has no
+# tools of its own. `tools:` lists connections of the `host` client configured in
+# mcp.yaml, and symfony/ai-mcp-tool turns each of them into a toolbox: it lists
+# the server's tools, hands their schemas to the model and forwards every call.
+ai:
+    platform:
+        # Both are configured, neither is required: which one answers is decided
+        # at runtime by App\Chat\Platform\HostPlatform, from MCP_DEMO_CHAT_PLATFORM.
+        # With neither key set the scripted stand-in answers, so the chat works —
+        # and the test suite runs — with no account anywhere.
+        anthropic:
+            api_key: '%env(ANTHROPIC_API_KEY)%'
+        openai:
+            api_key: '%env(OPENAI_API_KEY)%'
+
+    agent:
+        host:
+            # Not one of the platforms above: the selector in front of them, so a
+            # missing API key downgrades the model rather than breaking the page.
+            platform: 'App\Chat\Platform\HostPlatform'
+            model: '%env(MCP_DEMO_CHAT_MODEL)%'
+
+            prompt:
+                # `include_tools` appends the tool list to the system prompt. It is
+                # what makes the two prefixes below legible to the model: it can
+                # read that `conference_search_talks` and `organizer_search_talks`
+                # are the same tool on two servers.
+                include_tools: true
+                text: |
+                    You are the assistant of SymfonyCon Berlin 2026. You answer questions about the
+                    programme — talks, speakers, tracks, rooms and the schedule — and you help the
+                    programme committee with scheduling and the CFP inbox.
+
+                    Everything you know comes from the MCP servers you are connected to. Never answer
+                    about the programme from memory: call a tool first, and say so plainly when a tool
+                    gives you nothing.
+
+                    A tool's prefix tells you which server it belongs to. `conference_` is the
+                    read-only programme — prefer it for anything that only reads. `organizer_` is the
+                    privileged server: it exposes the same reading tools plus the ones that write, so
+                    only reach for it when the user actually wants something changed, and say what you
+                    are about to change before you change it.
+
+                    Answer in markdown, keep it short, and name the talks and speakers you found
+                    rather than summarising them away.
+
+            tools:
+                # Both servers, because a host is not limited to one. They overlap
+                # on purpose: the same reading tools show up under both prefixes,
+                # which is what a host with two connections actually looks like.
+                - { mcp_server: 'host.conference' }
+                - { mcp_server: 'host.organizer' }
+
+            # A conversation turn that needs more than a handful of tool calls is a
+            # runaway, not an answer: this is a demo, and the page waits for it.
+            max_tool_calls: 8
+
+    # The transcript lives in the HTTP session, so a reload keeps the conversation
+    # and nothing leaks between visitors. It holds the tool call messages too —
+    # that is what the chat renders as the MCP trail under each answer.
+    message_store:
+        session:
+            host:
+                identifier: 'mcp-demo-chat'

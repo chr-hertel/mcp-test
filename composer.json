@@ -15,6 +15,96 @@
                     "symfony/mcp-bundle": "0.1.99"
                 }
             }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/platform",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-platform": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/platform/src/Bridge/Anthropic",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-anthropic-platform": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/platform/src/Bridge/OpenResponses",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-open-responses-platform": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/platform/src/Bridge/OpenAi",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-open-ai-platform": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/agent",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-agent": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/agent/src/Bridge/Mcp",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-mcp-tool": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/chat",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-chat": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/chat/src/Bridge/Session",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-session-message-store": "0.13.99"
+                }
+            }
+        },
+        {
+            "type": "path",
+            "url": "upstream/symfony-ai/src/ai-bundle",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "symfony/ai-bundle": "0.13.99"
+                }
+            }
         }
     ],
     "require": {
@@ -25,9 +115,21 @@
         "doctrine/doctrine-bundle": "^2.13",
         "doctrine/doctrine-migrations-bundle": "^3.4",
         "doctrine/orm": "^3.3",
+        "league/commonmark": "^2.7",
         "mcp/sdk": "dev-main as 0.8.99",
         "nyholm/psr7": "^1.8",
         "psr/simple-cache": "^3.0",
+        "symfony/ai-agent": "0.13.99",
+        "symfony/ai-anthropic-platform": "0.13.99",
+        "symfony/ai-bundle": "0.13.99",
+        "symfony/ai-chat": "0.13.99",
+        "symfony/ai-mcp-tool": "0.13.99",
+        "symfony/ai-open-ai-platform": "0.13.99",
+        "symfony/ai-open-responses-platform": "0.13.99",
+        "symfony/ai-platform": "0.13.99",
+        "symfony/ai-session-message-store": "0.13.99",
+        "symfony/asset": "7.4.*",
+        "symfony/asset-mapper": "7.4.*",
         "symfony/console": "7.4.*",
         "symfony/dotenv": "7.4.*",
         "symfony/flex": "^2",
@@ -40,9 +142,11 @@
         "symfony/security-bundle": "7.4.*",
         "symfony/twig-bundle": "7.4.*",
         "symfony/uid": "7.4.*",
+        "symfony/ux-live-component": "^2.36",
         "symfony/validator": "7.4.*",
         "symfony/yaml": "7.4.*",
         "twig/extra-bundle": "^3.12",
+        "twig/markdown-extra": "^3.12",
         "twig/twig": "^3.12"
     },
     "require-dev": {
@@ -91,7 +195,8 @@
     "scripts": {
         "auto-scripts": {
             "cache:clear": "symfony-cmd",
-            "assets:install %PUBLIC_DIR%": "symfony-cmd"
+            "assets:install %PUBLIC_DIR%": "symfony-cmd",
+            "importmap:install": "symfony-cmd"
         },
         "post-install-cmd": [
             "@auto-scripts"

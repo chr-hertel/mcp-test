@@ -1,0 +1,61 @@
+/*
+ * Only the chat needs a stylesheet: everything else on this site is styled by
+ * the inline rules in templates/base.html.twig, and these use the same custom
+ * properties so both stay in step, in light and dark.
+ */
+
+.chat-layout { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 900px) { .chat-layout { grid-template-columns: minmax(0, 1fr) 290px; } }
+
+.chat { display: flex; flex-direction: column; min-height: 520px; padding: 0; overflow: hidden; }
+
+.chat-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.chat-head .model { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.chat-head form { margin-left: auto; }
+
+.chat-transcript { flex: 1; overflow-y: auto; max-height: 58vh; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+
+.bubble { max-width: 88%; min-width: 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); overflow-wrap: anywhere; }
+.bubble p { margin: 0 0 8px; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble.user { align-self: flex-end; background: var(--accent-soft); border-color: transparent; }
+.bubble.assistant { align-self: flex-start; background: var(--panel); }
+.bubble pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0 0; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+.bubble code { font-family: var(--mono); font-size: 0.86em; }
+
+.tool-call { align-self: flex-start; max-width: 88%; font-size: 13px; }
+.tool-call summary { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.tool-call summary b { color: var(--accent); font-weight: 600; }
+.tool-call pre { margin: 8px 0 0; max-height: 240px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+
+.chat-empty { color: var(--muted); margin: auto 0; text-align: center; }
+.chat-empty .starters { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+.chat-empty button { font: inherit; font-size: 13px; cursor: pointer; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; }
+.chat-empty button:hover { border-color: var(--accent); color: var(--accent); }
+
+.chat-composer { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); }
+.chat-composer input { flex: 1; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.chat-composer input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chat-composer button, .chat-head button { font: inherit; font-size: 13px; cursor: pointer; color: var(--panel); background: var(--accent); border: 1px solid transparent; border-radius: 10px; padding: 8px 16px; }
+.chat-head button { color: var(--muted); background: transparent; border-color: var(--line); padding: 5px 12px; }
+.chat-head button:hover { color: var(--fg); }
+.chat-composer button[disabled] { opacity: 0.5; cursor: progress; }
+
+.chat-busy { padding: 0 18px 14px; color: var(--muted); font-size: 13px; }
+
+.server-card { margin-bottom: 14px; }
+.server-card h3 { display: flex; align-items: baseline; gap: 8px; }
+.server-card ul { margin: 6px 0 0; }
+.server-card .capability { margin-top: 12px; }
+.server-card .capability > span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.server-card li { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.server-card li code { font-size: 11px; }
+.server-card li form { margin: 0; }
+.server-card li button, .server-card li a { font: inherit; font-size: 12px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; }
+.server-card code { word-break: break-all; }
+
+.prompt-form label { display: block; margin: 0 0 14px; }
+.prompt-form label span { display: block; font-size: 13px; margin-bottom: 4px; }
+.prompt-form label em { color: var(--muted); font-style: normal; font-size: 12px; }
+.prompt-form input { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.prompt-form button { font: inherit; font-size: 14px; cursor: pointer; color: var(--panel); background: var(--accent); border: 0; border-radius: 8px; padding: 8px 18px; }

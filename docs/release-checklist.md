@@ -16,11 +16,13 @@ app looks like, and whether a human can follow the instructions.
 | 4 · Inspector UI | Node, a browser | ~10 min |
 | 5 · Claude Desktop | the desktop app | ~15 min |
 | 6 · browser | — | ~2 min |
+| 6b · the chat host | — (a key, optionally) | ~5 min |
 | 7 · reproduction | a clean directory | ~5 min |
 
-**Short on time?** Phases 0–3 plus phase 7 catch everything mechanical. Phases 4
-and 5 are the ones that catch "it works but nobody could use it", and phase 5 is
-the only place elicitation, sampling and roots run against a *real* model.
+**Short on time?** Phases 0–3 plus phase 7 catch everything mechanical. Phases 4,
+5 and 6b are the ones that catch "it works but nobody could use it", and phases 5
+and 6b are the only places elicitation, sampling and roots run against a *real*
+model.
 
 ---
 
@@ -340,6 +342,45 @@ Then check nothing leaked into the protocol stream:
 
 ---
 
+## 6b. The chat host
+
+This application as an MCP host — the only phase where the demo is the thing
+holding the conversation. See [`chat.md`](chat.md).
+
+- [ ] <http://127.0.0.1:8099/chat> — the composer, and two server cards on the
+      right: **conference** with 9 tools, **organizer** with 16
+- [ ] The header says `scripted-host-1` with a **scripted model** chip — that is
+      the default, and it means no API key is involved
+- [ ] Ask *"which talks are about doctrine?"* — the answer arrives with a folded
+      `called search_talks on the conference server with {"query":"doctrine"}`
+      above it, and names **Doctrine Without Tears**
+- [ ] Unfold it: the arguments sent, and the server's raw JSON result
+- [ ] Ask *"good morning"* — it lists the tools it can reach instead of inventing
+      an answer
+- [ ] Attach the **conference** resource `conference://current`: it appears as
+      your own message, and nothing is sent to the model
+- [ ] Prompts → *Review a conference day*: the `day` field offers **2026-11-19**
+      and **2026-11-20** from the server's own `completion/complete`
+- [ ] Run it: the agenda arrives as the *user* turn, rendered by the server from
+      the current schedule, not by the form
+- [ ] **Reset** empties the conversation; a reload keeps it otherwise (it lives in
+      the session)
+
+With a real model — `MCP_DEMO_CHAT_PLATFORM=anthropic`, `MCP_DEMO_CHAT_MODEL` and
+a key in `.env.local`:
+
+- [ ] The chip shows the platform instead of *scripted model*
+- [ ] *"Schedule one of the unscheduled talks"* goes through `organizer_`, and the
+      answer says what it changed
+- [ ] *"Review the proposal from …"* runs `review_proposal`, whose **sampling**
+      request comes back to this same host and is answered by the model you
+      configured — the round trip [`chat.md`](chat.md) exists for
+- [ ] `submit_proposal` degrades with a message rather than failing: this client
+      advertises no elicitation handler, on purpose
+- [ ] `make db` afterwards — the model wrote to the fixture database
+
+---
+
 ## 7. Reproduction from scratch
 
 The thing most likely to be quietly broken, because nobody runs it twice.
@@ -347,8 +388,9 @@ The thing most likely to be quietly broken, because nobody runs it twice.
 ```console
 $ git clone <this repo> /tmp/mcp-demo-check && cd /tmp/mcp-demo-check
 $ make upstream          # clones symfony/ai, applies patches/ (currently empty)
-$ composer install
+$ composer install       # also downloads the chat's JavaScript (importmap:install)
 $ make db
+$ make assets            # the chat's stylesheet and controllers, for prod
 $ make check
 ```
 
@@ -393,3 +435,5 @@ $ git -C upstream/symfony-ai rev-parse --short HEAD
 | Counts are off but nothing failed | a check was added; update this file |
 | The Inspector CLI exits non-zero on a working call | `isError` does that — [`inspector.md`](inspector.md) |
 | A tool call times out on first use in a host | `dev` container compile; use `prod` |
+| `/chat` renders unstyled, or its buttons do nothing | the Asset Mapper — [`deployment.md`](deployment.md), *The chat's assets* |
+| The chat answers "No MCP server is answering" | the `host` client — `php bin/console debug:mcp --client=host --server=conference` |
