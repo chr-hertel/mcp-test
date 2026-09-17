@@ -94,6 +94,9 @@
         details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
         details[open] summary { margin-bottom: 10px; }
     </style>
+    {# The asset mapper serves the chat's stylesheet and its Stimulus controllers;
+       everything above is inline because it is the whole of the rest of the site. #}
+    {% block javascripts %}{{ importmap('app') }}{% endblock %}
 </head>
 <body>
 <header class="site">
@@ -104,6 +107,7 @@
             <a href="{{ path('dashboard') }}"{{ app.request.attributes.get('_route') == 'dashboard' ? ' aria-current="page"' : '' }}>Overview</a>
             <a href="{{ path('schedule') }}"{{ app.request.attributes.get('_route') == 'schedule' ? ' aria-current="page"' : '' }}>Schedule</a>
             <a href="{{ path('speakers') }}"{{ app.request.attributes.get('_route') == 'speakers' ? ' aria-current="page"' : '' }}>Speakers</a>
+            <a href="{{ path('chat') }}"{{ app.request.attributes.get('_route') starts with 'chat' ? ' aria-current="page"' : '' }}>Chat</a>
         </nav>
     </div>
 </header>

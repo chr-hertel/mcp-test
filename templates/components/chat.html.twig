@@ -1,0 +1,123 @@
+{# The conversation. `this` is App\Twig\Components\Chat. #}
+<div class="chat-layout" {{ attributes.defaults(stimulus_controller('chat')) }}>
+    <section class="panel chat">
+        {% set model = this.model %}
+
+        <div class="chat-head">
+            <strong>Conversation</strong>
+            <span class="model">{{ model.model }}</span>
+            {% if model.scripted %}
+                <span class="chip warn" title="No API key needed: the stand-in picks a tool from what the servers advertise, calls it, and reports what came back.">scripted model</span>
+            {% else %}
+                <span class="chip">{{ model.platform }}</span>
+            {% endif %}
+
+            <form {{ live_action('reset') }}>
+                <button type="submit" data-loading="addAttribute(disabled)">Reset</button>
+            </form>
+        </div>
+
+        <div class="chat-transcript" data-chat-target="transcript">
+            {% for entry in this.transcript %}
+                {% if entry.kind == 'tool' %}
+                    <details class="tool-call">
+                        <summary>
+                            called <b>{{ entry.tool }}</b> on the {{ entry.server }} server
+                            {%- if entry.arguments is not empty %} with {{ entry.arguments|json_encode }}{% endif %}
+                        </summary>
+                        <pre><code>{{ entry.text }}</code></pre>
+                    </details>
+                {% else %}
+                    <div class="bubble {{ entry.kind }}">
+                        {% if entry.kind == 'assistant' %}
+                            {{ entry.text|markdown_to_html }}
+                        {% else %}
+                            <p>{{ entry.text|nl2br }}</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="chat-empty">
+                    <p>Ask about the programme — every answer comes from an MCP server, never from memory.</p>
+                    <div class="starters">
+                        {% for starter in ['Which talks are about doctrine?', 'Who is speaking about testing?', 'Search the talks for accessibility'] %}
+                            <button type="button" data-action="chat#use" data-chat-text-param="{{ starter }}">{{ starter }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div class="chat-busy" data-loading="show">Asking the servers …</div>
+
+        <form class="chat-composer" {{ live_action('submit:prevent') }}>
+            <input type="text" autocomplete="off" autofocus data-model="norender|message" data-chat-target="input"
+                   placeholder="Which talks are about doctrine?" data-loading="addAttribute(disabled)">
+            <button type="submit" data-loading="addAttribute(disabled)">Send</button>
+        </form>
+    </section>
+
+    {# The host's side of the connection: what each server offers, and the two of
+       those three that are the user's to reach for rather than the model's. #}
+    <aside>
+        {% for server in this.servers %}
+            <div class="panel server-card">
+                <h3>
+                    {{ server.name }}
+                    <span class="chip plain">{{ server.tools|length }} tools</span>
+                </h3>
+
+                {% if server.error %}
+                    <p class="chip warn">unreachable: {{ server.error }}</p>
+                {% endif %}
+
+                {% if server.tools is not empty %}
+                    <div class="capability">
+                        <details>
+                            <summary>Tools the model may call</summary>
+                            <ul class="plain">
+                                {% for tool in server.tools %}
+                                    <li><code>{{ tool.name }}</code></li>
+                                {% endfor %}
+                            </ul>
+                        </details>
+                    </div>
+                {% endif %}
+
+                {% if server.prompts is not empty %}
+                    <div class="capability">
+                        <span>Prompts — yours to start</span>
+                        <ul class="plain">
+                            {% for prompt in server.prompts %}
+                                <li>
+                                    <a href="{{ path('chat_prompt', { server: server.name, name: prompt.name }) }}"
+                                       title="{{ prompt.description }}">{{ prompt.title ?? prompt.name }}</a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
+                {% if server.resources is not empty %}
+                    <div class="capability">
+                        <span>Resources — yours to attach</span>
+                        <ul class="plain">
+                            {% for resource in server.resources %}
+                                <li>
+                                    {% if resource.text %}
+                                        <form {{ live_action('attach', { server: server.name, uri: resource.uri }) }}>
+                                            <button type="submit" data-loading="addAttribute(disabled)">{{ resource.name }}</button>
+                                        </form>
+                                    {% else %}
+                                        <span class="muted">{{ resource.name }}</span>
+                                    {% endif %}
+                                    <code class="muted">{{ resource.uri }}</code>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </aside>
+</div>
