@@ -43,7 +43,7 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **72 tests / 249 assertions OK**, then the STDIO regression:
+- [ ] `make check` → **73 tests / 258 assertions OK**, then the STDIO regression:
       `conference_stdio 37 passed`, `organizer_stdio 42 passed`,
       `conference_2026_stdio 35 passed`, **0 failed**
 - [ ] `make serve` — then `make regression` → all seven connections plus the raw probes, **0 failed**
@@ -65,7 +65,7 @@ Nothing below this line is worth doing if these are red.
   `ServerConnectionInterface::getServerCapabilities()`; expect one more skip
   and one fewer pass per connection until that lands on `main`.
 
-- [ ] `make upstream-test` → `symfony/mcp-bundle` **206 tests OK**, PHPStan `No errors`
+- [ ] `make upstream-test` → `symfony/mcp-bundle` **210 tests OK**, PHPStan `No errors`
 
   This runs the *bundle's own* suite and its static analysis against the clone,
   with `bin/link-sdk` pointing it at the SDK the demo installed. A failure here

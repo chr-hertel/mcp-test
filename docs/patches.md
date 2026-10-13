@@ -3,7 +3,7 @@
 Everything in this file was found by building the demo and then pointing its own
 MCP client at its own MCP servers — `make regression`. Nine problems needed a
 code change — one of which turned out not to be a problem at all, and is kept
-as a write-up of the wrong diagnosis. Eighteen more are behaviours worth knowing
+as a write-up of the wrong diagnosis. Twenty more are behaviours worth knowing
 about, or upstream moves worth recording, but not bugs.
 
 Five of the nine only surfaced once the demo actually spoke protocol revision
@@ -975,3 +975,45 @@ request itself is well-formed JSON-RPC; only its params are wrong.
 
 Small, and arguable, so the raw probe reports the code it gets instead of
 asserting one.
+
+### The 0.9-pre integration branch — 13 October 2026
+
+`0.9-pre` is a local integration branch of `mcp/sdk`: `main` at `bb74bbe` plus
+eleven open pull requests merged on top (#568 to #584) and the fix-ups that make
+them fit together. Tested at `2f9b739`, by pointing `vendor/mcp/sdk` at the
+checkout. It is not on GitHub or Packagist, so the demo cannot depend on it
+through composer; `track-sdk-0-9-pre` carries what only holds there.
+
+Everything passed apart from one test, and the bundle needed nothing to keep
+working. It got one adoption:
+
+- **`session.lock`** exposes the opt-in per-session lock (#584): a
+  `FileSessionLock` next to the `file` store, or a `SymfonyLockSessionLock` from
+  a `LockFactory` service for any other store. The organizer server turns it on,
+  so every elicitation, sampling and roots round trip in the suite runs through
+  it. None deadlocks, and the `.lock` file shows up next to the session.
+
+The bundle's docs also still said STDIO serves the handshake era only, which
+#546 already made untrue on `main`; that is a separate docs commit.
+
+What the suite cannot reach: #580 and #581 fix *concurrent* requests on one
+session (stdio fibers resumed with each other's answers, parallel elicitations
+crossing over). The demo's clients send one request at a time, so those fixes
+are untested here and stay the SDK's own suite's to cover.
+
+### A client that never sets a log level gets warnings only
+
+On `0.9-pre`, `ClientGateway::log()` applies the level the client set with
+`logging/setLevel` (#571). That fixes a real gap: `ClientLogger` already
+filtered, the gateway did not. But it also brings `ClientLogger`'s default along.
+A client that set no level gets `warning` and above, so a tool logging at `info`
+through the gateway now reaches nobody unless the client asks.
+
+Until now the gateway sent every level, and the TypeScript SDK still does: it
+filters only once a level is set (`currentLevel ? … : false` in
+`isMessageIgnored()`). The specification leaves the default open. The changelog
+entry talks about "the level the client set" and does not mention the default.
+
+Arguable, so not patched. `StdioStreamPurityTest` sets `info` before expecting
+info logs, and `testAnUnsetLogLevelMeansWarning` pins the default, so it fails
+visibly whichever way #571 settles.
