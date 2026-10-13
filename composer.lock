@@ -1138,12 +1138,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/modelcontextprotocol/php-sdk.git",
-                "reference": "a5ed85f3396d40f09034b8b7b464f01d242a2203"
+                "reference": "bb74bbe0318046dc00153b9b9cfb66b65359bb33"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/a5ed85f3396d40f09034b8b7b464f01d242a2203",
-                "reference": "a5ed85f3396d40f09034b8b7b464f01d242a2203",
+                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/bb74bbe0318046dc00153b9b9cfb66b65359bb33",
+                "reference": "bb74bbe0318046dc00153b9b9cfb66b65359bb33",
                 "shasum": ""
             },
             "require": {
@@ -1179,6 +1179,7 @@
                 "phpdocumentor/shim": "^3",
                 "phpstan/phpstan": "^2.1",
                 "phpunit/phpunit": "^10.5",
+                "psr/cache": "^1.0 || ^2.0 || ^3.0",
                 "psr/simple-cache": "^2.0 || ^3.0",
                 "symfony/cache": "^5.4 || ^6.4 || ^7.3 || ^8.0",
                 "symfony/console": "^5.4 || ^6.4 || ^7.3 || ^8.0",
@@ -1187,6 +1188,8 @@
                 "symfony/process": "^5.4 || ^6.4 || ^7.3 || ^8.0"
             },
             "suggest": {
+                "firebase/php-jwt": "Required for the JwtTokenValidator.",
+                "psr/cache-implementation": "Required for JwtTokenValidator::fromIssuer() to cache metadata and keys.",
                 "symfony/finder": "Required for file-based discovery."
             },
             "default-branch": true,
@@ -1219,7 +1222,7 @@
                 "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
                 "source": "https://github.com/modelcontextprotocol/php-sdk/tree/main"
             },
-            "time": "2026-10-07T00:04:10+00:00"
+            "time": "2026-10-13T00:05:39+00:00"
         },
         {
             "name": "monolog/monolog",

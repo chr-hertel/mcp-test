@@ -191,6 +191,13 @@ mcp:
                 name: 'mcp-demo-regression'
                 version: '1.0.0'
                 description: 'The regression harness of the MCP demo application.'
+            # Pinned, because the three round trips below only exist on the
+            # handshake era. Unset, the SDK's client opens with `server/discover`
+            # and settles on 2026-07-28 against any server that speaks it — which
+            # every server here does, over STDIO too — and a tool that asks for
+            # roots or sampling then fails. The `modern` client below is the
+            # other half of the same choice.
+            protocol_version: '2025-11-25'
             # Handlers for the three server-initiated round trips. Each capability
             # is advertised only because a handler backs it.
             roots: 'App\Mcp\Client\WorkspaceRootsProvider'
