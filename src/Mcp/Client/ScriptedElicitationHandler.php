@@ -8,7 +8,6 @@ use Mcp\Client\Handler\Request\ElicitationCallbackInterface;
 use Mcp\Schema\Elicitation\BooleanSchemaDefinition;
 use Mcp\Schema\Elicitation\EnumSchemaDefinition;
 use Mcp\Schema\Elicitation\NumberSchemaDefinition;
-use Mcp\Schema\Elicitation\StringSchemaDefinition;
 use Mcp\Schema\Enum\ElicitAction;
 use Mcp\Schema\Request\ElicitRequest;
 use Mcp\Schema\Result\ElicitResult;
@@ -99,7 +98,9 @@ final class ScriptedElicitationHandler implements ElicitationCallbackInterface
             return new ElicitResult($this->action);
         }
 
-        $content = $this->answers + $this->fromSchema($request);
+        // What the script says, then what the server declared as default, then a
+        // plausible value for anything left — in that order of authority.
+        $content = $this->answers + ($request->requestedSchema?->getDefaults() ?? []) + $this->fromSchema($request);
 
         $this->log[] = ['message' => $request->message, 'action' => 'accept', 'content' => $content];
 
@@ -107,7 +108,8 @@ final class ScriptedElicitationHandler implements ElicitationCallbackInterface
     }
 
     /**
-     * Fill whatever the script did not, using the schema's own defaults and hints.
+     * Invent a value for each field the script left open and the schema has no
+     * default for, from the field's type and name.
      *
      * @return array<string, mixed>
      */
@@ -123,10 +125,9 @@ final class ScriptedElicitationHandler implements ElicitationCallbackInterface
 
         foreach ($schema->properties as $name => $definition) {
             $filled[$name] = match (true) {
-                $definition instanceof EnumSchemaDefinition => $definition->default ?? $definition->enum[0] ?? null,
-                $definition instanceof BooleanSchemaDefinition => $definition->default ?? true,
-                $definition instanceof NumberSchemaDefinition => $definition->default ?? $definition->minimum ?? 1,
-                $definition instanceof StringSchemaDefinition => $definition->default ?? $this->stringFor($name),
+                $definition instanceof EnumSchemaDefinition => $definition->enum[0] ?? null,
+                $definition instanceof BooleanSchemaDefinition => true,
+                $definition instanceof NumberSchemaDefinition => $definition->minimum ?? 1,
                 default => $this->stringFor($name),
             };
         }
