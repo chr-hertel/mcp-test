@@ -129,7 +129,7 @@ mcp:
                 `describe_request` reports what your own request declared.
             protocol_versions: ['2026-07-28']
             transports:
-                stdio: false      # the revision is defined over HTTP; there is nothing here for STDIO to serve
+                stdio: false      # STDIO would serve the handshake leg too; conference_2026_stdio covers the modern wire there
                 http: true
             http:
                 path: /mcp/2026
@@ -262,6 +262,16 @@ mcp:
                 modern_http:
                     transport: http
                     url: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
+                # The conference server again, on the modern wire over STDIO. The
+                # SDK's StdioTransport settles the era on the client's first
+                # request and serves either, so this is the one connection that
+                # gets 2026-07-28 into `make check`, without a web server.
+                conference_2026_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'conference']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
 
         # A third client, to show that identity, timeouts and handlers are
         # per client: this one advertises nothing, so the same servers see a

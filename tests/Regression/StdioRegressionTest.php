@@ -26,21 +26,23 @@ use Symfony\AI\McpBundle\Client\McpClientInterface;
 final class StdioRegressionTest extends McpTestCase
 {
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string, string}>
      */
     public static function connectionProvider(): iterable
     {
-        yield 'conference over stdio' => ['conference_stdio'];
-        yield 'organizer over stdio' => ['organizer_stdio'];
+        yield 'conference over stdio' => ['regression', 'conference_stdio'];
+        yield 'organizer over stdio' => ['regression', 'organizer_stdio'];
+        // The same server, on the 2026-07-28 wire: STDIO serves both eras.
+        yield 'conference over stdio, 2026-07-28' => ['modern', 'conference_2026_stdio'];
     }
 
     #[DataProvider('connectionProvider')]
-    public function testEveryCheckPasses(string $server): void
+    public function testEveryCheckPasses(string $clientName, string $server): void
     {
         self::bootKernel();
         $container = self::getContainer();
 
-        $client = $container->get('mcp.client.regression');
+        $client = $container->get('mcp.client.'.$clientName);
         \assert($client instanceof McpClientInterface);
 
         $runner = $container->get(RegressionRunner::class);
