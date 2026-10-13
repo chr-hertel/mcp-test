@@ -57,6 +57,46 @@ final class StdioStreamPurityTest extends McpTestCase
         // schedule_talk logs and emits progress through the client gateway. On
         // STDIO progress is a legitimate JSON-RPC notification; a logger writing
         // to the console would not be.
+        $messages = $this->scheduleTalk(logLevel: 'info');
+
+        // The tool's own log lines and progress updates travel on the same
+        // stream, interleaved with the answer — as notifications, not as text.
+        $notifications = array_values(array_filter($messages, static fn (array $m): bool => !isset($m['id'])));
+        $this->assertNotEmpty($notifications, 'The tool logged and reported progress, but nothing reached the client.');
+
+        $methods = array_column($notifications, 'method');
+        $this->assertContains('notifications/progress', $methods);
+        $this->assertContains('notifications/message', $methods);
+
+        $answers = array_values(array_filter($messages, static fn (array $m): bool => 3 === ($m['id'] ?? null)));
+        $this->assertCount(1, $answers, 'The tools/call request was answered exactly once.');
+        $this->assertFalse($answers[0]['result']['isError'] ?? true, 'Scheduling an unscheduled talk into a free slot should succeed.');
+        $this->assertSame('scheduled', $answers[0]['result']['structuredContent']['status'] ?? null);
+    }
+
+    /**
+     * A client that never sent `logging/setLevel` gets only warnings and above.
+     *
+     * Arguable rather than broken, so pinned: up to mcp/sdk 0.9-pre the gateway
+     * sent every level until the client narrowed it, which is also what the
+     * TypeScript SDK does. See docs/patches.md, "Not patched, but worth knowing".
+     */
+    public function testAnUnsetLogLevelMeansWarning(): void
+    {
+        $messages = $this->scheduleTalk(logLevel: null);
+
+        $logged = array_values(array_filter($messages, static fn (array $m): bool => 'notifications/message' === ($m['method'] ?? null)));
+
+        $this->assertSame([], array_column(array_column($logged, 'params'), 'level'), 'The tool logs at info and notice only; with no level set, none of it should reach the client.');
+    }
+
+    /**
+     * Schedule a talk over STDIO, optionally after setting the client's log level.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function scheduleTalk(?string $logLevel): array
+    {
         $lines = $this->runServer('organizer', [
             $this->message(1, 'initialize', [
                 'protocolVersion' => '2025-11-25',
@@ -64,7 +104,8 @@ final class StdioStreamPurityTest extends McpTestCase
                 'clientInfo' => ['name' => 'purity-test', 'version' => '1.0.0'],
             ]),
             ['jsonrpc' => '2.0', 'method' => 'notifications/initialized'],
-            $this->message(2, 'tools/call', [
+            ...(null === $logLevel ? [] : [$this->message(2, 'logging/setLevel', ['level' => $logLevel])]),
+            $this->message(3, 'tools/call', [
                 'name' => 'schedule_talk',
                 'arguments' => ['slug' => 'testing-what-matters', 'room' => 'Studio A', 'day' => '2026-11-20', 'startTime' => '14:00'],
                 // Progress notifications are opt-in: a server only sends them when
@@ -81,19 +122,7 @@ final class StdioStreamPurityTest extends McpTestCase
             $messages[] = $decoded;
         }
 
-        // The tool's own log lines and progress updates travel on the same
-        // stream, interleaved with the answer — as notifications, not as text.
-        $notifications = array_values(array_filter($messages, static fn (array $m): bool => !isset($m['id'])));
-        $this->assertNotEmpty($notifications, 'The tool logged and reported progress, but nothing reached the client.');
-
-        $methods = array_column($notifications, 'method');
-        $this->assertContains('notifications/progress', $methods);
-        $this->assertContains('notifications/message', $methods);
-
-        $answers = array_values(array_filter($messages, static fn (array $m): bool => 2 === ($m['id'] ?? null)));
-        $this->assertCount(1, $answers, 'The tools/call request was answered exactly once.');
-        $this->assertFalse($answers[0]['result']['isError'] ?? true, 'Scheduling an unscheduled talk into a free slot should succeed.');
-        $this->assertSame('scheduled', $answers[0]['result']['structuredContent']['status'] ?? null);
+        return $messages;
     }
 
     /**
