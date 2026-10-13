@@ -69,6 +69,12 @@ mcp:
                 path: /mcp/organizer
             session:
                 store: file
+                # The organizer is where one session sends several requests in a
+                # row: a tool call that elicits or samples, and the answer to it.
+                # The lock serializes them, so none overwrites what another saved.
+                lock:
+                    enabled: true
+                    timeout: 10
 
             registry:
                 tools:
