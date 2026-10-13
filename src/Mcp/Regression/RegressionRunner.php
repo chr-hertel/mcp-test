@@ -147,6 +147,36 @@ final class RegressionRunner
             return \sprintf('%d characters', \strlen($instructions));
         });
 
+        $this->check('lifecycle', 'server capabilities', function () use ($connection): string {
+            // Not on the bundle's `main` yet: chr-hertel/ai, "Expose the server
+            // capabilities on ServerConnectionInterface". Skipped until it lands.
+            if (!method_exists($connection, 'getServerCapabilities')) {
+                return 'skipped: this bundle does not expose getServerCapabilities()';
+            }
+
+            // From `initialize` on the handshake era, from `server/discover` on
+            // 2026-07-28: the SDK's client fills the same state either way.
+            $capabilities = $connection->getServerCapabilities();
+
+            if (null === $capabilities) {
+                throw new \RuntimeException('The server declared no capabilities.');
+            }
+
+            if (true !== $capabilities->tools) {
+                throw new \RuntimeException('Every server here exposes tools, but the "tools" capability is missing.');
+            }
+
+            $declared = array_keys(array_filter([
+                'tools' => $capabilities->tools,
+                'prompts' => $capabilities->prompts,
+                'resources' => $capabilities->resources,
+                'completions' => $capabilities->completions,
+                'logging' => $capabilities->logging,
+            ]));
+
+            return implode(', ', $declared);
+        });
+
         if ($this->modern) {
             $this->results[] = CheckResult::skip('lifecycle', 'logging/setLevel', 'removed by 2026-07-28; the level rides on each request');
         } else {
