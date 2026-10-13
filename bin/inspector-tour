@@ -118,6 +118,11 @@ say 'A tool failure the model can act on' \
 run_tool_error /mcp "'isError=true: ' + d['content'][0]['text']" \
     --method tools/call --tool-name get_talk --tool-arg slug=no-such-talk
 
+say 'A result that breaks its own outputSchema' \
+    'shape_result returns [] where the schema wants an object. The server checks before sending.'
+run_tool_error /mcp/diagnostics "'isError=true: ' + d['content'][0]['text']" \
+    --method tools/call --tool-name shape_result --tool-arg mode=empty_array
+
 say 'A result mixing three content types' \
     'Text, a resource_link to the speaker, and an embedded schedule resource.'
 run /mcp "', '.join(c['type'] for c in d['content'])" \
