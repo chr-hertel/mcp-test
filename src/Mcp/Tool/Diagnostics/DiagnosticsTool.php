@@ -142,6 +142,44 @@ final class DiagnosticsTool
     }
 
     /**
+     * Return a structured result that does or does not match the declared
+     * `outputSchema`, which the server has to check before sending it.
+     *
+     * `conform` matches, with an empty object built as `new \stdClass()`.
+     * `violate` sends a string where the schema wants an integer. `empty_array`
+     * is the PHP trap: `[]` is a JSON array, not an empty object, so a result
+     * that looks right in PHP fails a `type: object` member.
+     *
+     * @param string $mode one of "conform", "violate" or "empty_array"
+     *
+     * @return array{count: int|string, labels: \stdClass|array<never>}
+     */
+    #[McpTool(
+        name: 'shape_result',
+        title: 'Shape a structured result',
+        description: 'Return structured content that matches the output schema ("conform") or breaks it ("violate", "empty_array").',
+        annotations: new ToolAnnotations(readOnlyHint: true, idempotentHint: true, openWorldHint: false),
+        outputSchema: [
+            'type' => 'object',
+            'properties' => [
+                'count' => ['type' => 'integer'],
+                'labels' => ['type' => 'object'],
+            ],
+            'required' => ['count', 'labels'],
+        ],
+    )]
+    public function shapeResult(
+        #[Schema(enum: ['conform', 'violate', 'empty_array'])]
+        string $mode = 'conform',
+    ): array {
+        return match ($mode) {
+            'violate' => ['count' => 'one', 'labels' => new \stdClass()],
+            'empty_array' => ['count' => 0, 'labels' => []],
+            default => ['count' => 0, 'labels' => new \stdClass()],
+        };
+    }
+
+    /**
      * Return a tiny PNG, to check that binary content survives the transport.
      *
      * @return list<TextContent|ImageContent>

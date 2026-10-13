@@ -638,6 +638,50 @@ final class RegressionRunner
             });
         }
 
+        if ($this->hasTool('shape_result')) {
+            // The server checks structuredContent against the tool's outputSchema
+            // before sending it, and answers a mismatch with isError instead of
+            // the non-conforming value (modelcontextprotocol/php-sdk#515).
+            $this->check('errors', 'a result matching its outputSchema is sent', function () use ($connection): string {
+                $result = $connection->callTool('shape_result', ['mode' => 'conform']);
+
+                if ($result->isError) {
+                    throw new \RuntimeException('A conforming result was rejected: '.$this->firstLine($this->text($result)));
+                }
+
+                // Read from the text block: the client decodes structuredContent
+                // into an associative array, which turns the `{}` sent into `[]`.
+                return 'sent as '.json_encode(json_decode($this->text($result), flags: \JSON_THROW_ON_ERROR), \JSON_THROW_ON_ERROR);
+            });
+
+            $this->check('errors', 'a result breaking its outputSchema becomes isError', function () use ($connection): string {
+                $result = $connection->callTool('shape_result', ['mode' => 'violate']);
+
+                if (!$result->isError) {
+                    throw new \RuntimeException('A result violating the outputSchema was sent as it was.');
+                }
+
+                if (null !== $result->structuredContent) {
+                    throw new \RuntimeException('The rejected result still carried its structuredContent.');
+                }
+
+                return 'isError: true — '.$this->firstLine($this->text($result));
+            });
+
+            // Arguable rather than broken, so pinned: `[]` is a JSON array, and
+            // a tool returning it for a `type: object` member is now an error.
+            // See docs/patches.md, "Not patched, but worth knowing".
+            $this->check('errors', 'an empty PHP array is not an empty object', function () use ($connection): string {
+                $result = $connection->callTool('shape_result', ['mode' => 'empty_array']);
+
+                if (!$result->isError) {
+                    return 'accepted (upstream behaviour changed)';
+                }
+
+                return 'isError: true — '.$this->firstLine($this->text($result));
+            });
+        }
+
         if ($this->hasTool('search_talks')) {
             $this->check('errors', 'missing required argument is refused', function () use ($connection): string {
                 // get_talk requires "slug"; calling it bare must not reach the handler.
