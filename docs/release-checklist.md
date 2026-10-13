@@ -43,21 +43,29 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **67 tests / 238 assertions OK**, then the STDIO regression:
-      `conference_stdio 36 passed`, `organizer_stdio 41 passed`, **0 failed**
-- [ ] `make serve` — then `make regression` → all six connections plus the raw probes, **0 failed**
+- [ ] `make check` → **72 tests / 249 assertions OK**, then the STDIO regression:
+      `conference_stdio 37 passed`, `organizer_stdio 42 passed`,
+      `conference_2026_stdio 35 passed`, **0 failed**
+- [ ] `make serve` — then `make regression` → all seven connections plus the raw probes, **0 failed**
 
   | Connection | passed | skipped |
   |---|---|---|
-  | `conference_http` | 36 | 1 |
-  | `organizer_http` | 41 | 1 |
-  | `diagnostics_http` | 18 | 7 |
-  | `conference_stdio` | 36 | 1 |
-  | `organizer_stdio` | 41 | 1 |
-  | `modern_http` | 36 | 3 |
-  | `modern (raw)` | 26 | 0 |
+  | `conference_http` | 37 | 1 |
+  | `organizer_http` | 42 | 1 |
+  | `diagnostics_http` | 22 | 7 |
+  | `conference_stdio` | 37 | 1 |
+  | `organizer_stdio` | 42 | 1 |
+  | `modern_http` | 37 | 3 |
+  | `conference_2026_stdio` | 35 | 3 |
+  | `modern (raw)` | 28 | 0 |
 
-- [ ] `make upstream-test` → `symfony/mcp-bundle` **197 tests OK**, PHPStan `No errors`
+  `conference_2026_stdio` is the conference server on the 2026-07-28 wire over
+  STDIO, which is what gets the modern era into `make check`. The `server
+  capabilities` check skips itself on a bundle without
+  `ServerConnectionInterface::getServerCapabilities()`; expect one more skip
+  and one fewer pass per connection until that lands on `main`.
+
+- [ ] `make upstream-test` → `symfony/mcp-bundle` **206 tests OK**, PHPStan `No errors`
 
   This runs the *bundle's own* suite and its static analysis against the clone,
   with `bin/link-sdk` pointing it at the SDK the demo installed. A failure here
@@ -107,7 +115,7 @@ What someone sees before they connect anything.
   |---|---|---|---|---|
   | `conference` | 9 | 4 | 7 | 4 |
   | `organizer` | 16 | 4 | 7 | 4 |
-  | `diagnostics` | 6 | — | 2 | — |
+  | `diagnostics` | 7 | — | 2 | — |
   | `modern` | 13 | 4 | 7 | 4 |
 
   and **no** *Not exposed by any server* section. If one appears, a class
@@ -115,7 +123,7 @@ What someone sees before they connect anything.
   namespace prefix.
 
 - [ ] `php bin/console debug:mcp search_talks` — one element with its full input schema
-- [ ] `make clients` (`debug:mcp --clients`) — `regression` with five servers, `modern` and `minimal` with one each
+- [ ] `make clients` (`debug:mcp --clients`) — `regression` with five servers, `modern` and `minimal` with two each
 - [ ] `php bin/console debug:mcp --client=regression --server=conference_stdio` — connects, prints
       server info, the instructions block, and all four capability lists
 - [ ] `make claude-config` — absolute paths, the right PHP binary, `APP_ENV=prod`
@@ -129,7 +137,7 @@ What someone sees before they connect anything.
 
 The reference client, which knows nothing about this application.
 
-- [ ] `make inspector-tour` → **✓ 13 steps, all answered**
+- [ ] `make inspector-tour` → **✓ 14 steps, all answered**
 
   Read the output rather than just the last line. Each step names what it is
   showing; the interesting ones are 2 (a schema generated from a PHP signature),
@@ -160,14 +168,16 @@ The reference client, which knows nothing about this application.
 
 The reason the SDK branch exists. `make serve` first.
 
-- [ ] `make regression-2026` → `modern_http` **35 passed / 3 skipped**, then the
-      raw probes **26 passed**, **0 failed** either side
+- [ ] `make regression-2026` → `modern_http` **37 passed / 3 skipped**,
+      `conference_2026_stdio` **35 passed / 3 skipped**, then the raw probes
+      **28 passed**, **0 failed** anywhere
 
   Two runs over one revision. `modern_http` is the ordinary suite driven by the
   SDK's own client with `protocol_version: '2026-07-28'` — the same checks as
   every other connection, skipping `ping` and `logging/setLevel` because the
-  revision removed them. The raw probes are nine groups (discovery, lifecycle,
-  caching, notifications, subscriptions, MRTR, headers, apps, removals) driven by
+  revision removed them. The raw probes are ten groups (discovery, lifecycle,
+  caching, notifications, subscriptions, MRTR, headers, completion, apps,
+  removals) driven by
   `ModernClient`, which sends what a conforming client will not.
 
   The subscriptions group takes about ten seconds of the run on its own: each

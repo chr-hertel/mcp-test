@@ -190,7 +190,7 @@ reference client. `npx` fetches it; nothing to install.
 
 ```console
 $ make serve
-$ make inspector-tour   # thirteen CLI calls, narrated, over the whole surface
+$ make inspector-tour   # fourteen CLI calls, narrated, over the whole surface
 $ make inspector        # the UI — and the only way to see the MCP App render
 ```
 
