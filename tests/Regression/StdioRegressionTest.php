@@ -10,6 +10,7 @@ use App\Tests\Support\McpTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\McpBundle\Client\McpClientInterface;
+use Symfony\AI\McpBundle\Exception\ConnectionException;
 
 /**
  * The regression suite as a test: the same checks `app:mcp:regression` runs,
@@ -91,5 +92,30 @@ final class StdioRegressionTest extends McpTestCase
         } finally {
             $connection->disconnect();
         }
+    }
+
+    public function testADeadServerSaysWhyItDied(): void
+    {
+        self::bootKernel();
+
+        $client = self::getContainer()->get('mcp.client.minimal');
+        \assert($client instanceof McpClientInterface);
+
+        $connection = $client->get('dead_stdio');
+        $started = microtime(true);
+
+        try {
+            $connection->listTools();
+            $this->fail('A server that exits before answering was reported as connected.');
+        } catch (ConnectionException $e) {
+            // The SDK's client reports the exit code and the end of stderr, and
+            // fails at once instead of waiting out init_timeout.
+            $reason = (string) $e->getPrevious()?->getMessage();
+            $this->assertStringContainsString('code 3', $reason, $reason);
+            $this->assertStringContainsString('no licence key', $reason, $reason);
+            $this->assertLessThan(5.0, microtime(true) - $started, 'The client waited out the timeout for a process that was already gone.');
+        }
+
+        $this->assertFalse($connection->isConnected());
     }
 }

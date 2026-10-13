@@ -282,6 +282,13 @@ mcp:
                 version: '1.0.0'
             forward_server_logs: false
             servers:
+                # A server that dies before answering. The SDK's client reports
+                # the exit code and the end of stderr instead of only "no longer
+                # running", and stops claiming to be connected.
+                dead_stdio:
+                    transport: stdio
+                    command: ['php', '-r', 'fwrite(STDERR, "refusing to serve: no licence key\n"); exit(3);']
+                    init_timeout: 5
                 conference_stdio:
                     transport: stdio
                     command: ['php', 'bin/console', 'mcp:server', 'conference']
