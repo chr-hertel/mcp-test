@@ -1004,16 +1004,16 @@ are untested here and stay the SDK's own suite's to cover.
 ### A client that never sets a log level gets warnings only
 
 On `0.9-pre`, `ClientGateway::log()` applies the level the client set with
-`logging/setLevel` (#571). That fixes a real gap: `ClientLogger` already
-filtered, the gateway did not. But it also brings `ClientLogger`'s default along.
-A client that set no level gets `warning` and above, so a tool logging at `info`
-through the gateway now reaches nobody unless the client asks.
+`logging/setLevel` (#571). A client that set none gets `warning` and above, so a
+tool logging at `info` through the gateway reaches nobody unless the client asks.
 
-Until now the gateway sent every level, and the TypeScript SDK still does: it
-filters only once a level is set (`currentLevel ? … : false` in
-`isMessageIgnored()`). The specification leaves the default open. The changelog
-entry talks about "the level the client set" and does not mention the default.
+This looked like a regression at first: until now a direct gateway call sent every
+level, and the TypeScript SDK still does until a level is set. It is not one.
+`warning` has been the SDK's documented default since `ClientLogger` arrived
+(#176), and #571 makes the gateway follow it too. On 2026-07-28 a request naming no
+`logLevel` gets no log notifications at all, which `StatelessProtocol` enforces
+separately.
 
-Arguable, so not patched. `StdioStreamPurityTest` sets `info` before expecting
-info logs, and `testAnUnsetLogLevelMeansWarning` pins the default, so it fails
-visibly whichever way #571 settles.
+What was missing was the changelog saying so. #571 now does: "below `warning`
+while the client has set none". `StdioStreamPurityTest` sets `info` before
+expecting info logs, and `testAnUnsetLogLevelMeansWarning` pins the default.

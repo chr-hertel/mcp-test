@@ -77,9 +77,9 @@ final class StdioStreamPurityTest extends McpTestCase
     /**
      * A client that never sent `logging/setLevel` gets only warnings and above.
      *
-     * Arguable rather than broken, so pinned: up to mcp/sdk 0.9-pre the gateway
-     * sent every level until the client narrowed it, which is also what the
-     * TypeScript SDK does. See docs/patches.md, "Not patched, but worth knowing".
+     * That is the SDK's documented default, and `ClientGateway::log()` applies
+     * it since mcp/sdk 0.9 (modelcontextprotocol/php-sdk#571); before, a direct
+     * gateway call sent every level. See docs/patches.md.
      */
     public function testAnUnsetLogLevelMeansWarning(): void
     {
