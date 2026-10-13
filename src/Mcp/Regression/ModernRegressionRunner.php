@@ -59,6 +59,7 @@ final class ModernRegressionRunner
         $this->checkSubscriptions($client);
         $this->checkMultiRoundTrip($client, $endpoint);
         $this->checkHeaders($client, $endpoint);
+        $this->checkCompletion($client);
         $this->checkApps($client);
         $this->checkRemovals($client);
 
@@ -456,6 +457,22 @@ final class ModernRegressionRunner
             return \sprintf('refused with %d', $envelope['error']['code']);
         });
 
+        // A header the body has no argument for used to be waved through: there
+        // was nothing to compare it with (modelcontextprotocol/php-sdk#534).
+        $this->check('headers', 'a header whose argument the body omits is refused', function () use ($client): string {
+            $envelope = $client->callTool('search_track', [], headerParams: ['Track' => 'ai']);
+
+            if (!isset($envelope['error'])) {
+                throw new \RuntimeException('A Mcp-Param-Track without a track argument in the body was accepted.');
+            }
+
+            if (-32020 !== $envelope['error']['code']) {
+                throw new \RuntimeException(\sprintf('Refused with %d, but SEP-2243 names -32020 for a header mismatch.', $envelope['error']['code']));
+            }
+
+            return 'refused with -32020';
+        });
+
         $this->check('headers', 'a wrong Mcp-Name is refused', function () use ($endpoint): string {
             $raw = $this->http->request('POST', $endpoint, [
                 'headers' => [
@@ -483,6 +500,30 @@ final class ModernRegressionRunner
             }
 
             return \sprintf('refused with %d', $envelope['error']['code']);
+        });
+    }
+
+    // -- completion ----------------------------------------------------------
+
+    private function checkCompletion(ModernClient $client): void
+    {
+        // Used to complete against an empty prefix, which answered every value
+        // there is (modelcontextprotocol/php-sdk 0.9.0). A conforming client
+        // always sends both members, so only a raw request reaches this.
+        //
+        // Refused with -32600 rather than the -32602 used for other bad params;
+        // arguable, so reported rather than asserted. See docs/patches.md.
+        $this->check('completion', 'a completion without argument.value is refused', function () use ($client): string {
+            $envelope = $client->request('completion/complete', [
+                'ref' => ['type' => 'ref/resource', 'uri' => 'talk://{slug}'],
+                'argument' => ['name' => 'slug'],
+            ]);
+
+            if (!isset($envelope['error'])) {
+                throw new \RuntimeException('A completion request without argument.value was answered.');
+            }
+
+            return \sprintf('refused with %d: %s', $envelope['error']['code'], $envelope['error']['message']);
         });
     }
 
