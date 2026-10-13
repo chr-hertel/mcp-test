@@ -1002,6 +1002,11 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *             cache_pool?: string|Param, // PSR-16 cache service for the "cache" store. // Default: "cache.mcp.sessions"
  *             prefix?: string|Param, // Key prefix for the "cache" and "framework" stores. Defaults to "mcp-<name>-". // Default: null
  *             ttl?: int|Param, // Default: 3600
+ *             lock?: bool|array{ // Serializes the concurrent requests of one session, so none of them overwrites what another saved.
+ *                 enabled?: bool|Param, // Default: false
+ *                 factory?: string|Param, // Service id of a Symfony\Component\Lock\LockFactory, for a store shared across machines. Unset, the "file" store locks with flock() next to its session files. // Default: null
+ *                 timeout?: float|Param, // Seconds to wait for a lock held by another request of the same session. // Default: 30.0
+ *             },
  *         },
  *         registry?: array{ // The elements this server exposes, either as one list covering every kind or as a map narrowing each kind.
  *             tools?: Param|string|list<scalar|Param|null>,
