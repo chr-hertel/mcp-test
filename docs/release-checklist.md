@@ -115,8 +115,8 @@ What someone sees before they connect anything.
   namespace prefix.
 
 - [ ] `php bin/console debug:mcp search_talks` — one element with its full input schema
-- [ ] `make clients` (`mcp:client:debug`) — `regression` with five servers, `modern` and `minimal` with one each
-- [ ] `php bin/console mcp:client:debug regression conference_stdio` — connects, prints
+- [ ] `make clients` (`debug:mcp --clients`) — `regression` with five servers, `modern` and `minimal` with one each
+- [ ] `php bin/console debug:mcp --client=regression --server=conference_stdio` — connects, prints
       server info, the instructions block, and all four capability lists
 - [ ] `make claude-config` — absolute paths, the right PHP binary, `APP_ENV=prod`
 - [ ] `php bin/console debug:router | grep mcp` — four routes:
@@ -174,7 +174,7 @@ The reason the SDK branch exists. `make serve` first.
   stream has to be waited out, because the built-in server delivers a body only
   when it closes — [`deployment.md`](deployment.md) §3.
 
-- [ ] `php bin/console mcp:client:debug modern modern_http` — connects with no
+- [ ] `php bin/console debug:mcp --client=modern --server=modern_http` — connects with no
       `initialize` on the wire, and prints the server info and 13 tools
 
 - [ ] `server/discover` answers without a handshake, and advertises the MCP Apps

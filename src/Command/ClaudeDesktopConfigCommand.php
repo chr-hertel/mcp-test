@@ -124,7 +124,7 @@ final class ClaudeDesktopConfigCommand extends Command
         $io->listing([
             \sprintf('Build the "%s" database: <info>APP_ENV=%s php bin/console doctrine:schema:create && APP_ENV=%s php bin/console doctrine:fixtures:load -n</info>', $env, $env, $env),
             \sprintf('Warm the cache once, so the first tool call is not a compile: <info>APP_ENV=%s php bin/console cache:warmup</info>', $env),
-            'Check the server starts and speaks: <info>php bin/console mcp:client:debug regression conference_stdio</info>',
+            'Check the server starts and speaks: <info>php bin/console debug:mcp --client=regression --server=conference_stdio</info>',
         ]);
 
         $io->note('The "symfonycon-organizer" server can change the programme. It is unauthenticated over STDIO — the token only guards the HTTP endpoint — so leave it out if you would rather Claude could not reschedule anything.');

@@ -84,7 +84,7 @@ The demo can drive its own server exactly the way Claude Desktop will, which is
 much faster to debug than a desktop app that shows a red dot:
 
 ```console
-$ php bin/console mcp:client:debug regression conference_stdio   # connect and list
+$ php bin/console debug:mcp --client=regression --server=conference_stdio   # connect and list
 $ php bin/console app:mcp:regression conference_stdio            # exercise everything
 ```
 

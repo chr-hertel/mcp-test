@@ -107,7 +107,7 @@ debug: ## List what every configured MCP server exposes
 
 .PHONY: clients
 clients: ## List the configured MCP clients and their servers
-	$(CONSOLE) mcp:client:debug
+	$(CONSOLE) debug:mcp --clients
 
 .PHONY: claude-config
 claude-config: ## Print the Claude Desktop configuration fragment

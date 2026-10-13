@@ -227,7 +227,7 @@ Everything else worth clicking is in [`docs/inspector.md`](docs/inspector.md).
 
 ```console
 $ php bin/console debug:mcp                                # what each server exposes
-$ php bin/console mcp:client:debug regression conference_stdio   # connect and list
+$ php bin/console debug:mcp --client=regression --server=conference_stdio   # connect and list
 $ php bin/console app:mcp:regression                       # exercise everything
 ```
 
