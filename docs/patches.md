@@ -3,7 +3,7 @@
 Everything in this file was found by building the demo and then pointing its own
 MCP client at its own MCP servers — `make regression`. Nine problems needed a
 code change — one of which turned out not to be a problem at all, and is kept
-as a write-up of the wrong diagnosis. Fifteen more are behaviours worth knowing
+as a write-up of the wrong diagnosis. Eighteen more are behaviours worth knowing
 about, or upstream moves worth recording, but not bugs.
 
 Five of the nine only surfaced once the demo actually spoke protocol revision
@@ -54,16 +54,17 @@ Where upstream comes from:
 
 | Package | Source | Constraint |
 |---|---|---|
-| `mcp/sdk` | [modelcontextprotocol/php-sdk](https://github.com/modelcontextprotocol/php-sdk) | Packagist `dev-main as 0.8.99` |
+| `mcp/sdk` | [modelcontextprotocol/php-sdk](https://github.com/modelcontextprotocol/php-sdk) | Packagist `dev-main as 0.9.99` |
 | `symfony/mcp-bundle` | [symfony/ai](https://github.com/symfony/ai), `main` | path repository on `upstream/symfony-ai` |
 
 The SDK is no longer cloned. Every patch we carried against it has landed on its
 `main`, so a clone would be a slower copy of what composer installs anyway — and
 `dev-main` re-resolves the tip on every install, which is the drift detection a
 clone was giving us. The alias is needed because the bundle requires a release
-(`mcp/sdk: ^0.8.1` since 30 August 2026) and no dev branch satisfies a release
-constraint on its own; `bin/link-sdk` does the same thing for the bundle's own
-suite, so the two suites cannot resolve two different SDKs.
+(`mcp/sdk: ^0.8.1` on `main`, `^0.9` once chr-hertel/ai#73 lands) and no dev
+branch satisfies a release constraint on its own; `bin/link-sdk` reads the same
+alias for the bundle's own suite, so the two suites cannot resolve two different
+SDKs.
 
 The bundle stays a clone even with no patches to apply, because protocol revision
 2026-07-28 is only on `main` and not in any release. `make upstream-check` is what
@@ -906,3 +907,71 @@ not installed it the container blows up at runtime with:
 Nothing in the bundle's configuration reference mentions the dependency. Either
 `symfony/mcp-bundle` should require `psr/simple-cache`, or the docs should say
 so next to the `cache` store. This demo simply requires it.
+
+### The SDK heads for 0.9 — 13 October 2026
+
+`mcp/sdk` `main` carries an unreleased `0.9.0` section, twenty-two of its entries
+marked `[BC Break]`. Tested at `bb74bbe`. Almost none of the break surface reaches the
+bundle — no authorization classes, no custom transport, no `SchemaValidator`, no
+`ClientStateInterface` — and it catches every SDK exception through
+`Mcp\Exception\ExceptionInterface`, so `TimeoutException` moving under
+`RequestException` changes nothing either. Two things did reach it, and one
+reached the demo:
+
+- **The container stopped compiling.** `#[CompletionProvider]` lost its
+  `providerClass` argument (php-sdk#499), and `McpPass` still read
+  `$instance->provider ?? $instance->providerClass`. With a class-string
+  `provider` the `??` never gets that far, which is why the bundle's suite stayed
+  green; a `values:` or `enum:` provider reaches it and dies with *Undefined
+  property*. The fix is to read `provider` alone, which exists in 0.8.1 too, and
+  to require `^0.9`. It is chr-hertel/ai#73, labelled *blocked* until the SDK
+  tags, with a test that fails without it.
+- **`getServerCapabilities()` was missing.** The SDK's client now keeps what the
+  server declared, from `initialize` or from `server/discover` (php-sdk#542). The
+  bundle's connection forwards the other three things a server says about itself,
+  so it gets the fourth on `mcp-bundle-server-capabilities`, stacked on #73. The
+  regression check that uses it skips itself until then.
+- **The demo's handshake client quietly became a modern one.** The SDK's client
+  now defaults to 2026-07-28 and falls back to the handshake only when the server
+  does not speak the newer era — and the servers now speak it over STDIO too
+  (php-sdk#546). `mcp.clients.regression` never named a revision, so it settled
+  on 2026-07-28, and every tool that asks for roots or sampling failed with *This
+  protocol revision has no server-initiated requests*. It now pins
+  `protocol_version: '2025-11-25'`, which it always meant.
+
+That last one is the one an application will hit. Any bundle client with a
+`roots` or `sampling` handler and no `protocol_version` has handlers that will
+never be called against a server of either era, and nothing says so.
+Arguable, since the default is the SDK's to choose and the bundle's option says
+it keeps it, so not patched; a config-time warning in the bundle would be cheap.
+
+STDIO serving both eras is also what the demo gained most from:
+`conference_2026_stdio` puts the modern wire into `make check`, which until now
+could only reach it through the web server.
+
+### An empty PHP array is not an empty object
+
+The server now holds a tool's `structuredContent` to its `outputSchema` and answers
+a mismatch with `isError: true` (php-sdk#515, #539). That is the specification, and
+it is what the other SDKs do. The trap is PHP's: `[]` encodes as a JSON array, so
+a tool returning `['labels' => []]` for a `type: object` member fails a check it
+looks like it passes. `new \stdClass()` is the empty object.
+
+The client has the mirror image of it. It decodes `structuredContent` into an
+associative array, so the `{}` the server sent arrives as `[]`; a client that
+hands it on to another schema-checked tool reproduces the error one hop later.
+
+Pinned by `shape_result` on the diagnostics server and three checks: a conforming
+result, a violating one, and the empty array, which reports instead of failing if
+upstream ever starts accepting it.
+
+### A malformed completion is refused with -32600, not -32602
+
+A `completion/complete` whose `argument` lacks `name` or `value` used to complete
+against an empty prefix — every value there is. It is now refused, which is right.
+The code is `-32600` *Invalid Request*, where the SDK answers other malformed
+params, a tampered `requestState` among them, with `-32602` *Invalid params*. The
+request itself is well-formed JSON-RPC; only its params are wrong.
+
+Small, and arguable, so the raw probe reports the code it gets instead of
+asserting one.
