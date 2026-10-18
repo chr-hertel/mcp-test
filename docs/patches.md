@@ -3,7 +3,7 @@
 Everything in this file was found by building the demo and then pointing its own
 MCP client at its own MCP servers — `make regression`. Nine problems needed a
 code change — one of which turned out not to be a problem at all, and is kept
-as a write-up of the wrong diagnosis. Twenty more are behaviours worth knowing
+as a write-up of the wrong diagnosis. Twenty-three more are behaviours worth knowing
 about, or upstream moves worth recording, but not bugs.
 
 Five of the nine only surfaced once the demo actually spoke protocol revision
@@ -1017,3 +1017,68 @@ separately.
 What was missing was the changelog saying so. #571 now does: "below `warning`
 while the client has set none". `StdioStreamPurityTest` sets `info` before
 expecting info logs, and `testAnUnsetLogLevelMeansWarning` pins the default.
+
+### Back on the SDK's `main` — 18 October 2026
+
+Every pull request `0.9-pre` stacked on `main` (#568 to #584) has merged, and
+a dozen more after them (#585 to #603). Tested at `82e19d1`, from Packagist
+again: the `vendor/mcp/sdk` symlink is gone, and the lock records the commit.
+The two still open, #599 and #604, are nothing the suite depends on. `session.lock` and
+the `warning` default for an unset log level now hold on `main`, so this round
+needs no local checkout.
+
+The same bump is when the suite became a matrix — one client per era, the same
+servers in each column, see `ProtocolMatrix` — because the next finding is
+about the difference between the columns.
+
+### Sampling and roots on 2026-07-28: the error says "removed", the changelog says "return them"
+
+A tool that calls `ClientGateway::sample()` or `listRoots()` on a 2026-07-28
+request fails with a protocol error:
+
+> This protocol revision has no server-initiated requests: sampling and roots
+> were removed with it, so take what you need through tool arguments, resource
+> URIs or server configuration instead. Elicitation is the one ask that
+> survived, as a multi round-trip request.
+
+The first half is right — the gateway cannot send a request from inside one
+the revision answers in a single response. The rest is not what the same SDK
+does. `InputRequiredResult` takes `CreateSamplingMessageRequest` and
+`ListRootsRequest` next to `ElicitRequest`; the client's `InputRequestResolver`
+answers all three from its handlers; the server's `InputContext` has
+`samplingResult()` and `rootsResult()`; and the 0.9.0 changelog says so in the
+entry for the client default: *return those asks as an `InputRequiredResult`
+instead*. A developer who reads the error rewrites the tool to take arguments;
+one who reads the changelog keeps the feature.
+
+The demo believed the error. `mcp.yaml` said "Elicitation is the only one of the
+three that survives", so the `modern` client had no roots or sampling handler,
+and no test asked for either on 2026-07-28. `MultiRoundTripTool` now does, on the
+organizer, next to the gateway tools — and `InputRequiredShim` serves the same
+handlers on the handshake era, which nothing tested before either.
+
+Pinned in both directions: on the modern column the gateway's roots and sampling
+checks pass only if the call is *refused* for that reason, and the returned-ask
+checks have to pass in both columns, which `StdioRegressionTest` asserts by
+name. Arguable rather than broken, so not patched; the fix is a sentence, and it
+belongs in php-sdk: modelcontextprotocol/php-sdk#606.
+
+### List changes stopped reaching 2026-07-28 clients — 18 October 2026
+
+With the SDK at `82e19d1`, three of the raw subscription probes fail: the
+`modern` server agrees to none of `toolsListChanged`, `promptsListChanged` and
+`resourcesListChanged`, and a registry change never reaches the stream.
+
+php-sdk#593 announces `listChanged` only for the builder's own registry, on the
+reasoning that a registry passed to `setRegistry()` cannot be wired to the
+notification bus. The bundle passes one — and wires it itself, with
+`PublishingEventDispatcher` — so the changes still reach the bus, but
+`server/discover` no longer advertises them and `subscriptions/listen` declines
+them. For a bundle user, list-change notifications on 2026-07-28 are simply gone.
+
+Reproduced without the bundle and raised as
+modelcontextprotocol/php-sdk#607, with three ways out: announce it again for a
+registry from `setRegistry()` when a bus is set, let the caller say it is wired,
+or have the bundle call `setCapabilities()` and give up detection. Not patched:
+the fix belongs in the SDK, and which of the three is a decision for there. The
+probes stay red until it lands; that is the point of them.

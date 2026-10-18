@@ -27,9 +27,9 @@
                     └────────────────┬─────┴──────────────────────────┘
                                      │
                        ┌─────────────▼──────────────┐
-                       │   mcp.clients.regression   │
-                       │   five connections, back   │
-                       │   at those same servers    │
+                       │ mcp.clients.handshake and  │
+                       │ mcp.clients.modern: one    │
+                       │ per era, the same servers  │
                        └─────────────┬──────────────┘
                                      │
                        ┌─────────────▼──────────────┐
@@ -70,19 +70,37 @@ server; that access control is a plain firewall against a stable path; and that
 a tool whose whole purpose is to fail (`fail_on_purpose`) can exist without a
 general-purpose host ever seeing it.
 
-**The client points back at the server.** Six connections, all to this same
-application: four over HTTP, two by spawning `bin/console mcp:server`. That is
+**The client points back at the server.** Seven connections, all to this same
+application: four over HTTP, three by spawning `bin/console mcp:server`. That is
 what makes the regression suite an end-to-end check of both upstream libraries
 instead of a set of mocks agreeing with each other — and it is how the problems
 in [`patches.md`](patches.md) surfaced.
 
-Three clients, because two things are configured per client rather than per
-connection. The revision is one: `modern` sets
-`protocol_version: '2026-07-28'`, which is the whole of what puts the SDK's
-client on the modern wire, and the same suite then runs over both eras. The
-handlers are the other: `minimal` configures no roots, sampling or elicitation
-handler, so the same servers see a client that cannot do any of those, and the
-tools that need them have to degrade rather than fail.
+Four clients, because two things are configured per client rather than per
+connection. The revision is one, and it makes the suite a matrix:
+`handshake` pins `protocol_version: '2025-11-25'` and `modern` pins
+`'2026-07-28'`, both list the same seven servers, and
+[`ProtocolMatrix`](../src/Mcp/Regression/ProtocolMatrix.php) runs every check
+once per era — a column per client, a row per server.
+[`RevisionSupport`](../src/Mcp/Regression/RevisionSupport.php) is the one place
+the two columns are allowed to differ. `legacy` (2024-11-05) and the `legacy`
+server (pinned to 2025-06-18, no modern leg) add the cells that check only what
+two mismatched sides negotiate. The handlers are the other thing: `minimal`
+configures no roots, sampling or elicitation handler, so the same servers see a
+client that cannot do any of those, and the tools that need them have to
+degrade rather than fail.
+
+**Two ways to ask the client, both in both columns.** A tool can call the
+ClientGateway and block until the client has answered a request the server sent
+it — [`ProposalTool`](../src/Mcp/Tool/Organizer/ProposalTool.php) and
+[`WorkspaceTool`](../src/Mcp/Tool/Organizer/WorkspaceTool.php). That needs a
+channel back to the client while the request is open, which 2026-07-28 does not
+have, so on the modern column their roots and sampling checks become checks
+that the server *refuses*. Or a tool can return an `InputRequiredResult` naming
+the ask — [`MultiRoundTripTool`](../src/Mcp/Tool/Organizer/MultiRoundTripTool.php).
+On 2026-07-28 the client answers it and retries; on the handshake era the SDK's
+`InputRequiredShim` sends it as the real request and re-enters the tool. Those
+checks must pass identically in both columns.
 
 ## The two ways to reach a server, and when to use which
 
@@ -138,8 +156,8 @@ answers from a script a test sets, falling back to the requested schema's own
 defaults so the demo also works when nobody scripted anything.
 
 Swapping in a real model is a one-class change: implement the same SDK interface
-over Symfony AI's `Agent`/`Platform` and point `mcp.clients.regression.sampling`
-at it.
+over Symfony AI's `Agent`/`Platform` and point `mcp.clients.handshake.sampling`
+and `mcp.clients.modern.sampling` at it.
 
 Likewise the fixture programme in
 [`ProgrammeSeeder`](../src/Service/ProgrammeSeeder.php) is fixed data with fixed

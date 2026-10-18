@@ -43,27 +43,38 @@ purpose — `schedule_talk` needs candidates.
 
 Nothing below this line is worth doing if these are red.
 
-- [ ] `make check` → **73 tests / 258 assertions OK**, then the STDIO regression:
-      `conference_stdio 37 passed`, `organizer_stdio 42 passed`,
-      `conference_2026_stdio 35 passed`, **0 failed**
-- [ ] `make serve` — then `make regression` → all seven connections plus the raw probes, **0 failed**
+- [ ] `make check` → **78 tests / 272 assertions OK**, then the STDIO cells of
+      the protocol matrix, **0 failed**:
 
-  | Connection | passed | skipped |
+  | Server | handshake (2025-11-25) | modern (2026-07-28) |
   |---|---|---|
-  | `conference_http` | 37 | 1 |
-  | `organizer_http` | 42 | 1 |
-  | `diagnostics_http` | 22 | 7 |
-  | `conference_stdio` | 37 | 1 |
-  | `organizer_stdio` | 42 | 1 |
-  | `modern_http` | 37 | 3 |
-  | `conference_2026_stdio` | 35 | 3 |
-  | `modern (raw)` | 28 | 0 |
+  | `conference_stdio` | 37 passed / 1 skipped | 35 / 3 |
+  | `organizer_stdio` | 46 / 1 | 44 / 3 |
 
-  `conference_2026_stdio` is the conference server on the 2026-07-28 wire over
-  STDIO, which is what gets the modern era into `make check`. The `server
-  capabilities` check skips itself on a bundle without
-  `ServerConnectionInterface::getServerCapabilities()`; expect one more skip
-  and one fewer pass per connection until that lands on `main`.
+  and the four negotiation cells, all `ok`: `legacy × conference_stdio` settles
+  on 2024-11-05, `legacy × legacy_stdio`, `handshake × legacy_stdio` and
+  `modern × legacy_stdio` on 2025-06-18.
+
+- [ ] `make serve` — then `make regression` → every cell plus the raw probes, **0 failed**
+
+  | Server | handshake (2025-11-25) | modern (2026-07-28) |
+  |---|---|---|
+  | `conference_stdio` | 37 / 1 | 35 / 3 |
+  | `organizer_stdio` | 46 / 1 | 44 / 3 |
+  | `conference_http` | 37 / 1 | 35 / 3 |
+  | `organizer_http` | 46 / 1 | 44 / 3 |
+  | `diagnostics_http` | 22 / 7 | 20 / 9 |
+  | `modern_http` | 39 / 1 | 37 / 3 |
+
+  Raw 2026-07-28 probes: **28 passed**.
+
+  The modern column skips `ping` and `logging/setLevel`, which the revision
+  removed. On the organizer it also turns the gateway's roots and sampling checks
+  around into *refused* checks, and runs the `*_mrtr` tools to the same result
+  as the handshake column — `StdioRegressionTest` fails if any of those four
+  returned-ask checks skips. The `server capabilities` check skips itself on a
+  bundle without `ServerConnectionInterface::getServerCapabilities()`; expect
+  one more skip and one fewer pass per cell until that lands on `main`.
 
 - [ ] `make upstream-test` → `symfony/mcp-bundle` **210 tests OK**, PHPStan `No errors`
 
@@ -109,22 +120,23 @@ Nothing below this line is worth doing if these are red.
 
 What someone sees before they connect anything.
 
-- [ ] `make debug` (`debug:mcp`) — four servers:
+- [ ] `make debug` (`debug:mcp`) — five servers:
 
   | Server | tools | prompts | resources | templates |
   |---|---|---|---|---|
   | `conference` | 9 | 4 | 7 | 4 |
-  | `organizer` | 16 | 4 | 7 | 4 |
+  | `organizer` | 19 | 4 | 7 | 4 |
   | `diagnostics` | 7 | — | 2 | — |
-  | `modern` | 13 | 4 | 7 | 4 |
+  | `modern` | 14 | 4 | 7 | 4 |
+  | `legacy` | 6 | — | 2 | — |
 
   and **no** *Not exposed by any server* section. If one appears, a class
   carries an MCP attribute that no capability list matches — usually a typo in a
   namespace prefix.
 
 - [ ] `php bin/console debug:mcp search_talks` — one element with its full input schema
-- [ ] `make clients` (`debug:mcp --clients`) — `regression` with five servers, `modern` and `minimal` with two each
-- [ ] `php bin/console debug:mcp --client=regression --server=conference_stdio` — connects, prints
+- [ ] `make clients` (`debug:mcp --clients`) — `handshake` and `modern` with the same seven servers, `legacy` and `minimal` with two each
+- [ ] `php bin/console debug:mcp --client=handshake --server=conference_stdio` — connects, prints
       server info, the instructions block, and all four capability lists
 - [ ] `make claude-config` — absolute paths, the right PHP binary, `APP_ENV=prod`
 - [ ] `php bin/console debug:router | grep mcp` — four routes:
@@ -137,7 +149,7 @@ What someone sees before they connect anything.
 
 The reference client, which knows nothing about this application.
 
-- [ ] `make inspector-tour` → **✓ 14 steps, all answered**
+- [ ] `make inspector-tour` → **✓ 15 steps, all answered**
 
   Read the output rather than just the last line. Each step names what it is
   showing; the interesting ones are 2 (a schema generated from a PHP signature),
@@ -168,17 +180,16 @@ The reference client, which knows nothing about this application.
 
 The reason the SDK branch exists. `make serve` first.
 
-- [ ] `make regression-2026` → `modern_http` **37 passed / 3 skipped**,
-      `conference_2026_stdio` **35 passed / 3 skipped**, then the raw probes
-      **28 passed**, **0 failed** anywhere
+- [ ] `make regression-2026` → the modern column of the matrix (see §1), the
+      `modern × legacy_stdio` fallback, then the raw probes **28 passed**,
+      **0 failed** anywhere
 
-  Two runs over one revision. `modern_http` is the ordinary suite driven by the
-  SDK's own client with `protocol_version: '2026-07-28'` — the same checks as
-  every other connection, skipping `ping` and `logging/setLevel` because the
-  revision removed them. The raw probes are ten groups (discovery, lifecycle,
-  caching, notifications, subscriptions, MRTR, headers, completion, apps,
-  removals) driven by
-  `ModernClient`, which sends what a conforming client will not.
+  The column is the ordinary suite driven by the SDK's own client with
+  `protocol_version: '2026-07-28'` — the same checks as the handshake column,
+  told apart only by `RevisionSupport`. The raw probes are ten groups
+  (discovery, lifecycle, caching, notifications, subscriptions, MRTR, headers,
+  completion, apps, removals) driven by `ModernClient`, which sends what a
+  conforming client will not.
 
   The subscriptions group takes about ten seconds of the run on its own: each
   stream has to be waited out, because the built-in server delivers a body only

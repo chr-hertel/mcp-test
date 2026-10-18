@@ -134,7 +134,7 @@ next.
 
 **Timeouts.** A tool that samples or elicits is waiting on a human or a model,
 so its request timeout is a human-scale number, not a web-scale one. The
-`regression` client uses 30 seconds by default and the SDK's gateway defaults to
+`handshake` and `modern` clients use 30 seconds and the SDK's gateway defaults to
 120 for elicitation. PHP's own `max_execution_time` and the web server's timeout
 have to be at least as generous, or the process dies mid-fiber.
 

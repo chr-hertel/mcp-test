@@ -61,7 +61,9 @@ $ make serve         # http://127.0.0.1:8099
 | Answering `roots/list` | [`WorkspaceRootsProvider`](src/Mcp/Client/WorkspaceRootsProvider.php) |
 | Answering `sampling/createMessage` | [`ScriptedSamplingHandler`](src/Mcp/Client/ScriptedSamplingHandler.php) |
 | Answering `elicitation/create`, including decline and cancel | [`ScriptedElicitationHandler`](src/Mcp/Client/ScriptedElicitationHandler.php) |
-| Three clients: different capabilities, and different protocol revisions | `regression`, `modern` and `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| One client per protocol era against the same servers — a test matrix | `handshake` and `modern` in [`mcp.yaml`](config/packages/mcp.yaml), cells in [`ProtocolMatrix`](src/Mcp/Regression/ProtocolMatrix.php) |
+| Negotiating across mismatched revisions | the `legacy` client and the `legacy` server in [`mcp.yaml`](config/packages/mcp.yaml) |
+| A client that advertises nothing | `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Driving a server from application code | [`RegressionRunner`](src/Mcp/Regression/RegressionRunner.php) |
 
 ### Protocol revision 2026-07-28
@@ -75,6 +77,7 @@ request and routes it to the era it belongs to, so one endpoint serves both.
 | A server narrowed to the revision, on the same controller as the rest | `protocol_versions` on `modern` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | Per-request protocol version, capabilities and trace context | [`ModernLifecycleTool::describeRequest()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | **MRTR** — returning the ask instead of sending it, with signed `requestState` | [`ModernLifecycleTool::submitProposal()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
+| Roots, elicitation and sampling as returned asks, served on both eras | [`MultiRoundTripTool`](src/Mcp/Tool/Organizer/MultiRoundTripTool.php) |
 | Cache hints (`ttlMs` / `cacheScope`), which the revision requires | `cache:` in [`mcp.yaml`](config/packages/mcp.yaml) |
 | `x-mcp-header` — an argument mirrored into `Mcp-Param-*` and checked | [`ModernLifecycleTool::searchTrack()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
 | Opt-in progress and logging on the request's own stream | [`ModernLifecycleTool::reindexProgramme()`](src/Mcp/Tool/Modern/ModernLifecycleTool.php) |
@@ -190,7 +193,7 @@ reference client. `npx` fetches it; nothing to install.
 
 ```console
 $ make serve
-$ make inspector-tour   # fourteen CLI calls, narrated, over the whole surface
+$ make inspector-tour   # fifteen CLI calls, narrated, over the whole surface
 $ make inspector        # the UI — and the only way to see the MCP App render
 ```
 
