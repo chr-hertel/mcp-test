@@ -19,3 +19,8 @@
 # Recreate them (and re-apply the patches in patches/) with: make upstream
 /upstream/
 ###< mcp-demo ###
+
+###> symfony/asset-mapper ###
+/public/assets/
+/assets/vendor/
+###< symfony/asset-mapper ###

@@ -1,12 +1,14 @@
 # MCP Demo — the PHP MCP SDK and Symfony, end to end
 
-A Symfony application that is an MCP **server** and an MCP **client** at the same
-time, built on the upstream it is meant to exercise:
+A Symfony application that is an MCP **server**, an MCP **client** and — at
+`/chat` — an MCP **host**, all at once, built on the upstream it is meant to
+exercise:
 
 | Package | Source | Why |
 |---|---|---|
 | [`mcp/sdk`](https://github.com/modelcontextprotocol/php-sdk) | Packagist, `dev-main` | The 2026-07-28 surface is on `main` and we carry no patches against it. |
 | [`symfony/mcp-bundle`](https://github.com/symfony/ai) | clone of `main` | Everything this demo needed has landed; `patches/` is empty. |
+| [`symfony/ai-*`](https://github.com/symfony/ai) | clone of `main` | The agent side of MCP — `symfony/ai-mcp-tool` has no tagged release yet. |
 
 Both track a moving tip on purpose: `dev-main` re-resolves on every install, and
 `make upstream-check` fails the moment the bundle's `main` moves past the clone.
@@ -25,6 +27,7 @@ $ make upstream      # clone symfony/ai into upstream/, apply patches/
 $ make setup         # composer install + seed dev, test and prod databases
 $ make check         # PHPUnit + the regression suite over STDIO — no web server needed
 $ make serve         # http://127.0.0.1:8099
+$ make chat          # the chat host at /chat — no API key needed
 ```
 
 ---
@@ -64,7 +67,28 @@ $ make serve         # http://127.0.0.1:8099
 | One client per protocol era against the same servers — a test matrix | `handshake` and `modern` in [`mcp.yaml`](config/packages/mcp.yaml), cells in [`ProtocolMatrix`](src/Mcp/Regression/ProtocolMatrix.php) |
 | Negotiating across mismatched revisions | the `legacy` client and the `legacy` server in [`mcp.yaml`](config/packages/mcp.yaml) |
 | A client that advertises nothing | `minimal` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| A host: a chat whose model draws its tools from MCP servers | `host` in [`mcp.yaml`](config/packages/mcp.yaml), and [`docs/chat.md`](docs/chat.md) |
 | Driving a server from application code | [`RegressionRunner`](src/Mcp/Regression/RegressionRunner.php) |
+
+### Host
+
+`/chat` is the demo pointed at itself from the other side: a chat page whose
+agent has no tools of its own and borrows every one of them from this
+application's own MCP servers, over STDIO, exactly as a desktop host would.
+Symfony AI drives the model, the MCP bundle owns the connections, Symfony UX is
+the page. Full write-up in [`docs/chat.md`](docs/chat.md).
+
+| Concept | Where |
+|---|---|
+| An MCP server as an agent's toolbox | `tools: [{ mcp_server: … }]` in [`ai.yaml`](config/packages/ai.yaml), via `symfony/ai-mcp-tool` |
+| Two connections on one agent, prefixed per server | `mcp.clients.host` in [`mcp.yaml`](config/packages/mcp.yaml) |
+| Prompts as the user's half of the protocol, with `completion/complete` behind the form | [`ChatController`](src/Controller/ChatController.php), [`HostSurface`](src/Chat/Mcp/HostSurface.php) |
+| Resources attached as context, by the user rather than the model | [`ChatHost::attach()`](src/Chat/ChatHost.php) |
+| Sampling answered by the *host's* model | [`ModelSamplingHandler`](src/Chat/Mcp/ModelSamplingHandler.php) |
+| A tool degrading because the client advertises no elicitation | no `elicitation:` on the `host` client — see [`docs/chat.md`](docs/chat.md) |
+| A conversation in the session, tool messages and all | `message_store:` in [`ai.yaml`](config/packages/ai.yaml) |
+| A model stand-in that needs no API key, so the whole path is in `make check` | [`ScriptedPlatform`](src/Chat/Platform/ScriptedPlatform.php) |
+| Live Components for a turn that blocks on a child process | [`App\Twig\Components\Chat`](src/Twig/Components/Chat.php) |
 
 ### Protocol revision 2026-07-28
 
@@ -178,7 +202,7 @@ The same checks run under PHPUnit, alongside three other angles:
 | [`ModernLifecycleTest`](tests/Functional/ModernLifecycleTest.php) | protocol revision 2026-07-28: discovery, MRTR, cache hints, what was removed |
 
 ```console
-$ make test          # 25 tests, no web server, no network
+$ make test          # the whole suite, no web server, no network
 $ make upstream-test # the upstream libraries' own suites, against the patched clones
 ```
 
@@ -230,7 +254,8 @@ Everything else worth clicking is in [`docs/inspector.md`](docs/inspector.md).
 
 ```console
 $ php bin/console debug:mcp                                # what each server exposes
-$ php bin/console debug:mcp --client=regression --server=conference_stdio   # connect and list
+$ php bin/console debug:mcp --clients                      # the clients and their servers
+$ php bin/console debug:mcp --client=host --server=conference   # connect and list
 $ php bin/console app:mcp:regression                       # exercise everything
 ```
 
@@ -239,6 +264,12 @@ $ php bin/console app:mcp:regression                       # exercise everything
 `make serve`, then <http://127.0.0.1:8099> — the same programme rendered for
 people, with the MCP surface of every server introspected out of the running
 container.
+
+And <http://127.0.0.1:8099/chat>, where the application is the host: ask
+"which talks are about doctrine?" and watch the answer arrive with the MCP call
+that produced it folded underneath. It answers with a scripted stand-in model
+until you set `MCP_DEMO_CHAT_PLATFORM` and a key —
+[`docs/chat.md`](docs/chat.md).
 
 ### All of it, in order
 
@@ -266,6 +297,7 @@ connecting. Full walkthrough in [`docs/claude-desktop.md`](docs/claude-desktop.m
 
 | | |
 |---|---|
+| [`docs/chat.md`](docs/chat.md) | the chat host: the agent, the connections, and the model that is not one |
 | [`docs/patches.md`](docs/patches.md) | what building this found in the upstream libraries, and the patches |
 | [`docs/claude-desktop.md`](docs/claude-desktop.md) | connecting a host, and what to ask it |
 | [`docs/release-checklist.md`](docs/release-checklist.md) | the manual walkthrough of every scenario, for before you tag |
@@ -287,6 +319,11 @@ src/Mcp/App/                 MCP Apps
 src/Mcp/Completion/          argument completion providers
 src/Mcp/Client/              the client-side handlers: roots, sampling, elicitation
 src/Mcp/Regression/          the regression runner
+src/Chat/                    the chat host: the agent's platform and its MCP surface
+src/Twig/Components/         the chat's Live Component
+templates/chat/              the chat page and the prompt form
+templates/components/        the Live Component's template
+assets/                      the chat's stylesheet and Stimulus controller
 templates/mcp/               the MCP App shell and its fragments
 patches/                     what had to change upstream (empty; all of it landed)
 upstream/                    the symfony/ai clone (gitignored; `make upstream`)
@@ -297,4 +334,6 @@ workspace/                   the CFP inbox the client advertises as a root
 
 PHP 8.2+ with `ext-fileinfo`, Composer, git. SQLite — no database server. The
 `symfony` CLI for `make serve`; anything that runs `public/index.php` will do
-otherwise, subject to [`docs/deployment.md`](docs/deployment.md).
+otherwise, subject to [`docs/deployment.md`](docs/deployment.md). The chat needs
+no API key and no Node.js: its JavaScript is three files the Asset Mapper
+serves, fetched by `composer install`.

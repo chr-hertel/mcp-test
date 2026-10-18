@@ -58,3 +58,42 @@ services:
     App\Mcp\Client\ScriptedElicitationHandler:
         tags:
             - { name: kernel.reset, method: reset }
+
+    # The chat host's model, picked at runtime: the locator keeps the two remote
+    # platforms uninstantiated unless MCP_DEMO_CHAT_PLATFORM names one of them.
+    App\Chat\Platform\HostPlatform:
+        arguments:
+            $platforms: !service_locator
+                scripted: '@App\Chat\Platform\ScriptedPlatform'
+                anthropic: '@ai.platform.anthropic'
+                openai: '@ai.platform.openai'
+            $platform: '%env(MCP_DEMO_CHAT_PLATFORM)%'
+            $model: '%env(MCP_DEMO_CHAT_MODEL)%'
+
+    # The chat's three collaborators are all named services rather than types:
+    # one agent of several possible ones, one message store of several possible
+    # ones, and the MCP client that is a client rather than a server.
+    App\Chat\ChatHost:
+        arguments:
+            $agent: '@ai.agent.host'
+            $store: '@ai.message_store.session.host'
+            $servers: '@mcp.client.host'
+
+    App\Chat\Mcp\HostSurface:
+        arguments:
+            $host: '@mcp.client.host'
+            $cache: '@cache.app'
+
+    # The chat renders the model's answers as markdown, and a model's answer is
+    # whatever a tool put in front of it. CommonMark passes raw HTML through by
+    # default, so the converter behind `|markdown_to_html` is configured not to:
+    # a talk abstract containing a <script> tag would otherwise be one.
+    app.markdown.converter:
+        class: League\CommonMark\CommonMarkConverter
+        arguments:
+            - html_input: 'escape'
+              allow_unsafe_links: false
+
+    twig.markdown.default:
+        class: Twig\Extra\Markdown\LeagueMarkdown
+        arguments: ['@app.markdown.converter']

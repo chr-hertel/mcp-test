@@ -218,6 +218,10 @@ mcp:
     # and both point at the same servers, so each row is one server connection.
     # App\Mcp\Regression\ProtocolMatrix spells the cells out, together with the
     # ones that only check what an older revision negotiates.
+    #
+    # The `host` client is the odd one out: it points back here too, but for a
+    # reader rather than for a test — it is what the chat page at /chat talks
+    # to. See docs/chat.md.
     # ------------------------------------------------------------------------
     clients:
         # The handshake-era column: `initialize`, a session, and requests the
@@ -327,6 +331,51 @@ mcp:
                 legacy_stdio:
                     transport: stdio
                     command: ['php', 'bin/console', 'mcp:server', 'legacy']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
+
+        # The chat host: what src/Chat drives from the browser. Its connections are
+        # the only thing standing between the model and this application's data.
+        #
+        # STDIO on purpose: the chat then needs no web server of its own beyond the
+        # one serving the page, because every turn spawns `bin/console mcp:server`
+        # the way Claude Desktop would.
+        host:
+            client_info:
+                name: 'mcp-demo-chat'
+                version: '1.0.0'
+                description: 'The chat host of the MCP demo application.'
+
+            # Sampling is answered by the host's own model — the round trip a host
+            # exists for: a server asks its client for a completion, and the client
+            # already has one. `review_proposal` is the tool that uses it.
+            sampling: 'App\Chat\Mcp\ModelSamplingHandler'
+
+            # The same roots the `handshake` client advertises, so the CFP import
+            # tool works from the chat too.
+            roots: 'App\Mcp\Client\WorkspaceRootsProvider'
+
+            # No elicitation handler, deliberately: a server question mid-tool-call
+            # has nowhere to go in a single HTTP round trip, so `submit_proposal`
+            # degrades to the message it degrades to for any client that cannot be
+            # asked. That degradation is the point — see docs/chat.md.
+            forward_server_logs: true
+
+            # A turn can spawn several tool calls, each a process start and a
+            # Doctrine boot; the `handshake` client's 30 seconds is tight for that.
+            request_timeout: 60
+
+            servers:
+                conference:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'conference']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
+                organizer:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'organizer']
                     cwd: '%kernel.project_dir%'
                     env:
                         APP_ENV: '%kernel.environment%'
