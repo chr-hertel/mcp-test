@@ -1078,11 +1078,13 @@ notification bus. The bundle passes one — and wires it itself, with
 them. For a bundle user, list-change notifications on 2026-07-28 are simply gone.
 
 Reproduced without the bundle and raised as
-modelcontextprotocol/php-sdk#607, with three ways out: announce it again for a
-registry from `setRegistry()` when a bus is set, let the caller say it is wired,
-or have the bundle call `setCapabilities()` and give up detection. Not patched:
-the fix belongs in the SDK, and which of the three is a decision for there. The
-probes stay red until it lands; that is the point of them.
+modelcontextprotocol/php-sdk#607. Fixed the same day by php-sdk#608, with none of
+the three options the issue offered: the registry says it itself now, through
+`RegistryInterface::publishesListChanges()`, and `Registry` answers `true` when
+its dispatcher is a `PublishingEventDispatcher` — which is what the bundle hands
+it. So the bundle gets `listChanged` back without a change, and the probes pass
+again at `39578c2`. The new interface method is a BC break for other
+implementations; neither the bundle nor the demo has one.
 
 ### Four patches again — 18 October 2026
 

@@ -1138,12 +1138,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/modelcontextprotocol/php-sdk.git",
-                "reference": "82e19d114e95671e05e7df7909195f7ace03d90e"
+                "reference": "39578c23881afa3e658f448b80ec4239c3b7a164"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/82e19d114e95671e05e7df7909195f7ace03d90e",
-                "reference": "82e19d114e95671e05e7df7909195f7ace03d90e",
+                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/39578c23881afa3e658f448b80ec4239c3b7a164",
+                "reference": "39578c23881afa3e658f448b80ec4239c3b7a164",
                 "shasum": ""
             },
             "require": {
@@ -1224,7 +1224,7 @@
                 "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
                 "source": "https://github.com/modelcontextprotocol/php-sdk/tree/main"
             },
-            "time": "2026-10-15T00:40:15+00:00"
+            "time": "2026-10-18T13:49:04+00:00"
         },
         {
             "name": "monolog/monolog",
