@@ -1138,12 +1138,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/modelcontextprotocol/php-sdk.git",
-                "reference": "bb74bbe0318046dc00153b9b9cfb66b65359bb33"
+                "reference": "82e19d114e95671e05e7df7909195f7ace03d90e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/bb74bbe0318046dc00153b9b9cfb66b65359bb33",
-                "reference": "bb74bbe0318046dc00153b9b9cfb66b65359bb33",
+                "url": "https://api.github.com/repos/modelcontextprotocol/php-sdk/zipball/82e19d114e95671e05e7df7909195f7ace03d90e",
+                "reference": "82e19d114e95671e05e7df7909195f7ace03d90e",
                 "shasum": ""
             },
             "require": {
@@ -1185,12 +1185,14 @@
                 "symfony/console": "^5.4 || ^6.4 || ^7.3 || ^8.0",
                 "symfony/finder": "^5.4 || ^6.4 || ^7.3 || ^8.0",
                 "symfony/http-client": "^5.4 || ^6.4 || ^7.3 || ^8.0",
+                "symfony/lock": "^5.4 || ^6.4 || ^7.3 || ^8.0",
                 "symfony/process": "^5.4 || ^6.4 || ^7.3 || ^8.0"
             },
             "suggest": {
                 "firebase/php-jwt": "Required for the JwtTokenValidator.",
                 "psr/cache-implementation": "Required for JwtTokenValidator::fromIssuer() to cache metadata and keys.",
-                "symfony/finder": "Required for file-based discovery."
+                "symfony/finder": "Required for file-based discovery.",
+                "symfony/lock": "Required for the SymfonyLockSessionLock."
             },
             "default-branch": true,
             "type": "library",
@@ -1222,7 +1224,7 @@
                 "issues": "https://github.com/modelcontextprotocol/php-sdk/issues",
                 "source": "https://github.com/modelcontextprotocol/php-sdk/tree/main"
             },
-            "time": "2026-10-13T00:05:39+00:00"
+            "time": "2026-10-15T00:40:15+00:00"
         },
         {
             "name": "monolog/monolog",
