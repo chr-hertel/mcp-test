@@ -42,10 +42,9 @@ BRANCH = "main"
 # achievable: a patch built on another's feature has to name it, and a block
 # carrying both then belongs to the later one rather than being ambiguous.
 #
-# Empty, because the current series lives as commits on the clone's branches and
-# was exported with `git format-patch` (docs/patches.md, "Four patches again").
-# The machinery stays for changes made in the working tree, and an empty list is
-# what makes a stray one an error rather than a silent export.
+# Empty: the SDK 0.9 series landed as symfony/ai#2693. The machinery stays
+# because the next finding will need it, and because an empty list is what makes
+# a stray change in the clone an error rather than a silent export.
 PATCHES = []
 
 # When a file belongs wholly to one patch, say so rather than relying on markers.

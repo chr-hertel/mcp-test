@@ -95,18 +95,14 @@ Nothing below this line is worth doing if these are red.
 
 - [ ] `make apply-patches` → silent
 
-  One line per patch in `patches/mcp-bundle/`, four of them. **`FAILED` is fatal** —
-  nothing in the series fits either way, so upstream moved underneath it. With a
-  patch back in the series, the verdict to expect here is `in place` or
-  `overlaps`, never `applied`: `applied` is normal on a fresh clone and
+  One line per patch in `patches/mcp-bundle/`, which is empty since
+  symfony/ai#2693 merged, so silence is the expected result. **`FAILED` is
+  fatal** — nothing in the series fits either way, so upstream moved underneath
+  it. With a patch back in the series, the verdict to expect here is `in place`
+  or `overlaps`, never `applied`: `applied` is normal on a fresh clone and
   suspicious on one you have been working in.
 
 - [ ] `bin/export-patches --dry-run` → `the series is empty and the clone is clean`
-
-  It reads uncommitted changes, and the current series lives as commits on the
-  clone's `mcp-bundle-*` branches, so it was exported with `git format-patch`
-  instead — see *Four patches again* in [`patches.md`](patches.md). "Empty"
-  here means no stray change sits in the clone, which is still worth knowing.
 
   With patches in the series this instead reports that the series reproduces the
   working tree and runs the bundle's suite in a pristine clone — the

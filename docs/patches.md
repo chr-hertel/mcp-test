@@ -3,7 +3,7 @@
 Everything in this file was found by building the demo and then pointing its own
 MCP client at its own MCP servers — `make regression`. Nine problems needed a
 code change — one of which turned out not to be a problem at all, and is kept
-as a write-up of the wrong diagnosis. Twenty-three more are behaviours worth knowing
+as a write-up of the wrong diagnosis. Twenty-four more are behaviours worth knowing
 about, or upstream moves worth recording, but not bugs.
 
 Five of the nine only surfaced once the demo actually spoke protocol revision
@@ -1108,3 +1108,30 @@ the bundle's own suite passes (210 tests) and PHPStan finds nothing.
 
 The first can only go upstream once the SDK tags 0.9, and the second and third
 build on it; they leave the series one at a time as they land.
+
+### Landed as symfony/ai#2693 — 18 October 2026
+
+`mcp/sdk` v0.9.0 is tagged, and the four patches went upstream as one pull
+request, one commit each. #2692 was meant to wait as a draft for the tag, but
+symfony/ai does not take drafts and carsonbot closed it; #2693 replaced it once
+the tag was out, and merged squashed as `f72eec6`. `patches/mcp-bundle/` is
+empty again, and the clone is plain `main`.
+
+The merge carried three changes past the patches, all from SDK 0.9 and all
+documented in the bundle's `UPGRADE.md`:
+
+* `http.allowed_origins` — the SDK's DNS rebinding protection now accepts an
+  `Origin` header only when it is the endpoint's own, where it used to accept
+  any origin whose host was allowed. The Inspector's proxy sends none, so the
+  demo needs no entry; the Inspector UI's direct mode would.
+* a client without `protocol_version` speaks 2026-07-28 and falls back to the
+  handshake only when the server has no modern leg. Every matrix client pins its
+  revision; `minimal` does not, and its two tests (list and call a tool, and
+  connect to a server that dies) work the same on either era.
+* `session.lock.ttl` for a `factory` lock, which also takes the session
+  `prefix` now. The organizer locks with the `file` store, which ignores both.
+
+Against the merged clone: the bundle's suite passes (218 tests) and PHPStan
+finds nothing, `make check` is green, and every HTTP cell and the 28 raw
+2026-07-28 probes pass. The SDK stays at `39578c2`: `main` is one commit ahead,
+and that commit only regroups the changelog (php-sdk#610).

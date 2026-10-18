@@ -238,12 +238,15 @@ one-liner for "which of these are apps".
 
 ## Gotchas
 
-**DNS rebinding protection.** The SDK only accepts requests whose `Origin` or
-`Host` names `localhost`, `127.0.0.1` or `[::1]`. The Inspector's proxy connects
-server-side, so a local endpoint just works — but pointing it at a remote
+**DNS rebinding protection.** The SDK only accepts requests whose `Host` names
+`localhost`, `127.0.0.1` or `[::1]`, and since 0.9 an `Origin` header only when
+it is the endpoint's own origin. The Inspector's proxy connects server-side and
+sends no `Origin`, so a local endpoint just works — but pointing it at a remote
 deployment needs `http.allowed_hosts` on that server (see
 [`deployment.md`](deployment.md)), otherwise every request is a bare `403
-Forbidden: Invalid Host header` with no JSON-RPC envelope.
+Forbidden: Invalid Host header` with no JSON-RPC envelope. The UI's direct
+connection mode, where the browser at `http://localhost:6274` calls the endpoint
+itself, also needs `http.allowed_origins: ['http://localhost:6274']`.
 
 **Pagination.** `conference` is configured with `pagination_limit: 5` on purpose
 and has nine tools. The Inspector follows the cursor and shows all nine, so the

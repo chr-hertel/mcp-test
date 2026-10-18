@@ -138,11 +138,13 @@ so its request timeout is a human-scale number, not a web-scale one. The
 120 for elicitation. PHP's own `max_execution_time` and the web server's timeout
 have to be at least as generous, or the process dies mid-fiber.
 
-**DNS rebinding.** The SDK's HTTP transport only accepts requests whose
-`Origin`/`Host` names localhost, which is right for a desktop host on the same
-machine and wrong the moment the endpoint is public. Set
-`http.allowed_hosts: ['mcp.example.com']` per server, or `false` behind a proxy
-that already validates `Host`.
+**DNS rebinding.** The SDK's HTTP transport only accepts requests whose `Host`
+names localhost, and since 0.9 an `Origin` header only when it is the endpoint's
+own origin. That is right for a desktop host on the same machine and wrong the
+moment the endpoint is public. Set `http.allowed_hosts: ['mcp.example.com']` per
+server, or `false` behind a proxy that already validates `Host`. A browser-based
+client served from another origin also needs `http.allowed_origins`, listing it
+with scheme and port.
 
 **Authentication.** An MCP endpoint is an ordinary Symfony route, so a firewall
 targets it directly — that is all this demo does for `organizer`. Real
