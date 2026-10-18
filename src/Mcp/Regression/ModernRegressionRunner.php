@@ -259,16 +259,27 @@ final class ModernRegressionRunner
             return \sprintf('%d frame(s), the acknowledgment first', \count($carried));
         });
 
-        $this->check('subscriptions', 'the agreed set is everything the server advertises', function () use ($everything, &$carried): string {
+        $this->check('subscriptions', 'the agreed set is everything the server advertises', function () use ($client, $everything, &$carried): string {
             $agreed = (array) ($this->acknowledgment($carried, 'sub-demo')['params']['notifications'] ?? []);
             $declined = array_diff(array_keys($everything), array_keys($agreed));
 
-            // Every type asked for is advertised by this server, so every type
-            // asked for has to come back agreed.
+            // This server is configured to deliver every type asked for, so every
+            // type has to come back agreed. When one does not, say whether
+            // discovery stopped advertising it too: that tells a change in what the
+            // server announces apart from one in what `listen` accepts.
             if ([] !== $declined) {
+                $capabilities = $this->result($client->discover())['capabilities'] ?? [];
+                $advertised = array_keys(array_filter([
+                    'toolsListChanged' => $capabilities['tools']['listChanged'] ?? false,
+                    'promptsListChanged' => $capabilities['prompts']['listChanged'] ?? false,
+                    'resourcesListChanged' => $capabilities['resources']['listChanged'] ?? false,
+                    'resourceSubscriptions' => $capabilities['resources']['subscribe'] ?? false,
+                ]));
+
                 throw new \RuntimeException(\sprintf(
-                    'The server declined %s, though server/discover advertises it.',
+                    'The server declined %s; server/discover advertises %s.',
                     implode(', ', $declined),
+                    [] === $advertised ? 'none of them' : implode(', ', $advertised),
                 ));
             }
 
