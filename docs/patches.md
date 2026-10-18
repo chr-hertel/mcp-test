@@ -1062,7 +1062,10 @@ Pinned in both directions: on the modern column the gateway's roots and sampling
 checks pass only if the call is *refused* for that reason, and the returned-ask
 checks have to pass in both columns, which `StdioRegressionTest` asserts by
 name. Arguable rather than broken, so not patched; the fix is a sentence, and it
-belongs in php-sdk: modelcontextprotocol/php-sdk#606.
+belonged in php-sdk: modelcontextprotocol/php-sdk#606, merged the same day. From
+`39578c2` the message names the refused request and points at
+`InputRequiredResult`; the check still matches, since it keeps "no
+server-initiated requests".
 
 ### List changes stopped reaching 2026-07-28 clients — 18 October 2026
 
