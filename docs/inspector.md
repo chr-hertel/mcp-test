@@ -136,7 +136,7 @@ $ make inspector-cli SERVER=organizer ARGS='--method tools/list'
 
 ### The guided tour
 
-`make inspector-tour` runs fourteen of these calls in order, each with a line
+`make inspector-tour` runs fifteen of these calls in order, each with a line
 saying what it demonstrates. It is the fastest way to see the whole surface
 through a client that knows nothing about this application:
 
@@ -159,7 +159,7 @@ $ make serve && make inspector-tour
     probe_client, on the diagnostics server. Sampling and elicitation need an interactive client.
     → protocol 2025-11-25 — roots=true, sampling=false, elicitation=false
 
-✓ 14 steps, all answered.
+✓ 15 steps, all answered.
 ```
 
 It is a demonstration, not a test — it prints rather than asserts. `make regression`

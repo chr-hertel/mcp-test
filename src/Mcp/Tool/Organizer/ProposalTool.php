@@ -16,9 +16,6 @@ use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Content\TextContent;
-use Mcp\Schema\Elicitation\ElicitationSchema;
-use Mcp\Schema\Elicitation\EnumSchemaDefinition;
-use Mcp\Schema\Elicitation\StringSchemaDefinition;
 use Mcp\Schema\Enum\LoggingLevel;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\RequestContext;
@@ -35,6 +32,13 @@ use Mcp\Server\RequestContext;
  *
  * Both were deprecated in protocol revision 2026-07-28 (SEP-2577) and remain
  * functional; they are demonstrated here because hosts still speak them.
+ *
+ * Through the gateway, which is the handshake era's way of asking: the call
+ * blocks until the client answers. On 2026-07-28 that still works for
+ * elicitation, which the SDK turns into a second round trip behind the call, and
+ * not for sampling, which the revision has no way to send from inside a
+ * request. {@see MultiRoundTripTool} asks the same things the way that works on
+ * both.
  */
 final class ProposalTool
 {
@@ -90,29 +94,8 @@ final class ProposalTool
             }
 
             $result = $client->elicit(
-                message: \sprintf('Who should we credit for "%s"?', $title),
-                requestedSchema: new ElicitationSchema(
-                    properties: [
-                        'name' => new StringSchemaDefinition(
-                            title: 'Speaker name',
-                            description: 'The name to print in the programme.',
-                            minLength: 2,
-                            maxLength: 120,
-                        ),
-                        'email' => new StringSchemaDefinition(
-                            title: 'Speaker email',
-                            description: 'Where the programme committee should reply.',
-                            format: 'email',
-                        ),
-                        'consent' => new EnumSchemaDefinition(
-                            title: 'Code of conduct',
-                            enum: ['accepted', 'declined'],
-                            description: 'Speakers must accept the code of conduct.',
-                            enumNames: ['I accept', 'I decline'],
-                        ),
-                    ],
-                    required: ['name', 'email', 'consent'],
-                ),
+                message: ProposalAsks::speakerMessage($title),
+                requestedSchema: ProposalAsks::speakerSchema(),
             );
 
             if ($result->isDeclined()) {
@@ -183,26 +166,16 @@ final class ProposalTool
         }
 
         $result = $client->sample(
-            message: \sprintf(
-                "You are on the programme committee of %s.\n\n".
-                "Review this proposal in at most six sentences, then give a score from 1 to 5 on its own last line as \"Score: N\".\n\n".
-                "Title: %s\nTrack: %s\nLevel: %s\nSpeaker: %s\n\nAbstract:\n%s",
-                $this->conferences->current()->getTitle(),
-                $proposal->getTitle(),
-                $proposal->getTrack()->value,
-                $proposal->getLevel()->value,
-                $proposal->getSpeakerName(),
-                $proposal->getAbstract(),
-            ),
-            maxTokens: 400,
+            message: ProposalAsks::reviewPrompt($this->conferences->current()->getTitle(), $proposal),
+            maxTokens: ProposalAsks::REVIEW_MAX_TOKENS,
             options: [
-                'systemPrompt' => 'You are a fair, concise conference programme committee member.',
-                'temperature' => 0.3,
+                'systemPrompt' => ProposalAsks::REVIEW_SYSTEM_PROMPT,
+                'temperature' => ProposalAsks::REVIEW_TEMPERATURE,
             ],
         );
 
         $review = $result->content instanceof TextContent ? trim((string) $result->content->text) : '';
-        $score = preg_match('/Score:\s*([1-5])/i', $review, $matches) ? (int) $matches[1] : 3;
+        $score = ProposalAsks::score($review);
 
         $proposal->review($review, $score);
         $this->entityManager->flush();

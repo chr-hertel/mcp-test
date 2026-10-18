@@ -176,6 +176,11 @@ run /mcp/organizer "'%d tools, including %s' % (len(d['tools']),
         ', '.join(n for n in (t['name'] for t in d['tools']) if n in ('schedule_talk', 'submit_proposal')))" \
     --method tools/list
 
+say 'An ask the tool returns, answered by a client that never heard of it' \
+    'list_client_roots_mrtr returns roots/list as an InputRequiredResult; on the handshake era the SDK sends it as a real request.'
+run /mcp/organizer "d['structuredContent']['message'] + ' — asked by returning, answered as an ordinary roots/list'" \
+    --method tools/call --tool-name list_client_roots_mrtr
+
 printf '\n'
 if [[ $failed -eq 0 ]]; then
     printf '%s✓ %d steps, all answered.%s\n' "$green" "$step" "$reset"

@@ -61,7 +61,8 @@ mcp:
                 conflicts rather than something to retry with force. `submit_proposal` asks the
                 user for the speaker details it is missing, and `review_proposal` asks your model
                 to draft the review — both degrade to a plain message when the client cannot do
-                that.
+                that. The `*_mrtr` variants ask the same things by returning the question instead
+                of sending it, which works on every protocol revision.
             transports:
                 stdio: true
                 http: true
