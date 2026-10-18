@@ -136,7 +136,7 @@ mcp:
                 `describe_request` reports what your own request declared.
             protocol_versions: ['2026-07-28']
             transports:
-                stdio: false      # STDIO would serve the handshake leg too; conference_2026_stdio covers the modern wire there
+                stdio: false      # STDIO would serve the handshake leg too; the `modern` client over conference_stdio covers the modern wire there
                 http: true
             http:
                 path: /mcp/2026
@@ -184,51 +184,67 @@ mcp:
                 resource_templates: ['*']
                 apps: ['*']
 
+        # The server side of the protocol matrix: a server that answers one old
+        # revision and nothing else. Its handshake leg is pinned to 2025-06-18,
+        # and listing no modern revision refuses the modern era outright — so a
+        # 2025-11-25 client has to negotiate down, and a 2026-07-28 client has to
+        # notice and fall back to the handshake. Only negotiation is checked
+        # here; see App\Mcp\Regression\ProtocolMatrix.
+        legacy:
+            name: 'symfonycon-legacy'
+            version: '1.0.0'
+            description: 'The read-only programme, for clients that stopped at protocol revision 2025-06-18.'
+            protocol_versions: ['2025-06-18']
+            transports:
+                stdio: true
+                http: false    # negotiation does not depend on the transport, and STDIO keeps it in `make check`
+            session:
+                store: file
+
+            registry:
+                tools:
+                    - 'App\Mcp\Tool\Programme\'
+
     # ------------------------------------------------------------------------
     # Clients: the remote MCP servers this application reaches out to.
     #
-    # Both of them point back at this very application. That is what makes the
+    # All of them point back at this very application. That is what makes the
     # regression suite possible: `bin/console app:mcp:regression` drives a real
     # MCP client, over a real transport, against a real server — so a change in
     # either upstream library shows up as a failing assertion here.
+    #
+    # The suite is a matrix. The protocol revision is a property of the client,
+    # so each column is one client — `handshake` and `modern`, one per era —
+    # and both point at the same servers, so each row is one server connection.
+    # App\Mcp\Regression\ProtocolMatrix spells the cells out, together with the
+    # ones that only check what an older revision negotiates.
     # ------------------------------------------------------------------------
     clients:
-        regression:
+        # The handshake-era column: `initialize`, a session, and requests the
+        # server sends the client while one of its own is open.
+        handshake:
             client_info:
-                name: 'mcp-demo-regression'
+                name: 'mcp-demo-handshake'
                 version: '1.0.0'
-                description: 'The regression harness of the MCP demo application.'
-            # Pinned, because the three round trips below only exist on the
-            # handshake era. Unset, the SDK's client opens with `server/discover`
-            # and settles on 2026-07-28 against any server that speaks it — which
-            # every server here does, over STDIO too — and a tool that asks for
-            # roots or sampling then fails. The `modern` client below is the
-            # other half of the same choice.
+                description: 'The regression harness of the MCP demo application, on the handshake lifecycle.'
+            # Pinned, because the SDK's client defaults to 2026-07-28 and would
+            # settle on it against every server here, leaving this column empty.
             protocol_version: '2025-11-25'
-            # Handlers for the three server-initiated round trips. Each capability
-            # is advertised only because a handler backs it.
+            # Handlers for the three things a server can ask a client. Each
+            # capability is advertised only because a handler backs it.
             roots: 'App\Mcp\Client\WorkspaceRootsProvider'
             sampling: 'App\Mcp\Client\ScriptedSamplingHandler'
             elicitation: 'App\Mcp\Client\ScriptedElicitationHandler'
             forward_server_logs: true
             request_timeout: 30
 
-            servers:
-                # Over HTTP, against the running web server.
-                conference_http:
-                    transport: http
-                    url: '%env(MCP_DEMO_BASE_URL)%/mcp'
-                organizer_http:
-                    transport: http
-                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/organizer'
-                    headers:
-                        Authorization: 'Bearer %env(MCP_DEMO_ORGANIZER_TOKEN)%'
-                diagnostics_http:
-                    transport: http
-                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/diagnostics'
-
+            # One list for both columns: what differs between them is the client,
+            # never the server it reaches.
+            servers: &matrix_servers
                 # Over STDIO, by spawning this application's own console command.
-                # No web server needed, which is what CI uses.
+                # No web server needed, which is what `make check` and CI use.
+                # The SDK's StdioTransport settles the era on the client's first
+                # request, so STDIO serves both columns.
                 conference_stdio:
                     transport: stdio
                     command: ['php', 'bin/console', 'mcp:server', 'conference']
@@ -241,48 +257,83 @@ mcp:
                     cwd: '%kernel.project_dir%'
                     env:
                         APP_ENV: '%kernel.environment%'
+                legacy_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'legacy']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
 
-        # The same suite, over the 2026-07-28 wire. `protocol_version` is what
-        # picks the era: the SDK's client stops sending `initialize`, puts the
-        # `_meta` envelope on every request, derives the SEP-2243 headers from
-        # the message, and answers a multi round-trip call itself — so the
-        # caller sees the same API it uses against a handshake server.
-        #
-        # Its own client rather than a sixth connection on "regression", because
-        # the revision is a property of the client, not of one server.
+                # Over HTTP, against the running web server.
+                conference_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp'
+                organizer_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/organizer'
+                    headers:
+                        Authorization: 'Bearer %env(MCP_DEMO_ORGANIZER_TOKEN)%'
+                diagnostics_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/diagnostics'
+                # The `modern` server narrows its modern leg to 2026-07-28 but
+                # still answers the handshake, so it belongs in both columns too.
+                modern_http:
+                    transport: http
+                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
+
+        # The 2026-07-28 column. `protocol_version` is what picks the era: the
+        # SDK's client stops sending `initialize`, puts the `_meta` envelope on
+        # every request, derives the SEP-2243 headers from the message, and
+        # answers a multi round-trip call itself — so the caller sees the same
+        # API it uses against a handshake server.
         modern:
             client_info:
-                name: 'mcp-demo-regression-2026'
+                name: 'mcp-demo-modern'
                 version: '1.0.0'
                 description: 'The regression harness of the MCP demo application, on the modern lifecycle.'
             protocol_version: '2026-07-28'
 
-            # Elicitation is the only one of the three that survives the
-            # revision, and it arrives inverted: the server returns the question
-            # as its result rather than sending a request, and the client
-            # answers and retries. The handler is the same either way.
+            # The same three handlers. The revision took away the server's way
+            # of *sending* these requests, not the requests: a server returns
+            # them in an `input_required` result, and the SDK's client answers
+            # them from these handlers and retries the call. What no longer works
+            # is a server reaching for ClientGateway::sample() or listRoots(),
+            # and the suite pins that it says so.
+            roots: 'App\Mcp\Client\WorkspaceRootsProvider'
+            sampling: 'App\Mcp\Client\ScriptedSamplingHandler'
             elicitation: 'App\Mcp\Client\ScriptedElicitationHandler'
             forward_server_logs: true
             request_timeout: 30
 
+            servers: *matrix_servers
+
+        # Below the matrix: a revision older than either column, only to check
+        # what it negotiates. Two servers are enough for that — one that speaks
+        # everything, and one pinned to a revision this client does not ask for.
+        legacy:
+            client_info:
+                name: 'mcp-demo-legacy'
+                version: '1.0.0'
+            protocol_version: '2024-11-05'
+            forward_server_logs: false
             servers:
-                modern_http:
-                    transport: http
-                    url: '%env(MCP_DEMO_BASE_URL)%/mcp/2026'
-                # The conference server again, on the modern wire over STDIO. The
-                # SDK's StdioTransport settles the era on the client's first
-                # request and serves either, so this is the one connection that
-                # gets 2026-07-28 into `make check`, without a web server.
-                conference_2026_stdio:
+                conference_stdio:
                     transport: stdio
                     command: ['php', 'bin/console', 'mcp:server', 'conference']
                     cwd: '%kernel.project_dir%'
                     env:
                         APP_ENV: '%kernel.environment%'
+                legacy_stdio:
+                    transport: stdio
+                    command: ['php', 'bin/console', 'mcp:server', 'legacy']
+                    cwd: '%kernel.project_dir%'
+                    env:
+                        APP_ENV: '%kernel.environment%'
 
-        # A third client, to show that identity, timeouts and handlers are
-        # per client: this one advertises nothing, so the same servers see a
-        # client that cannot be asked for roots, sampling or elicitation.
+        # Identity, timeouts and handlers are per client: this one advertises
+        # nothing, so the same servers see a client that cannot be asked for
+        # roots, sampling or elicitation.
         minimal:
             client_info:
                 name: 'mcp-demo-minimal'

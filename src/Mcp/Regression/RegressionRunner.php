@@ -14,6 +14,7 @@ use Mcp\Schema\Content\ResourceLink;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Content\TextResourceContents;
 use Mcp\Schema\Enum\LoggingLevel;
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Schema\Prompt;
 use Mcp\Schema\PromptReference;
 use Mcp\Schema\ResourceReference;
@@ -59,15 +60,10 @@ final class RegressionRunner
     private bool $hasResourceTemplates = false;
 
     /**
-     * Whether the connection negotiated a revision from the modern era, in
-     * which a handful of methods no longer exist.
-     *
-     * The runner adapts to the *server* everywhere else — a check whose subject
-     * is not exposed is skipped. This is the same rule one level down: a method
-     * the revision removed is not a missing feature, and calling it would only
-     * prove that the server implements the era it said it does.
+     * What the negotiated revision lets the suite exercise — the difference
+     * between the columns of {@see ProtocolMatrix}.
      */
-    private bool $modern = false;
+    private RevisionSupport $revision;
 
     public function __construct(
         private readonly ScriptedElicitationHandler $elicitation,
@@ -75,15 +71,16 @@ final class RegressionRunner
     }
 
     /**
+     * Every check, against one server.
+     *
+     * @param ProtocolVersion|null $expected the revision the two sides must settle on, when the
+     *                                       caller knows it — a cell of {@see ProtocolMatrix}
+     *
      * @return list<CheckResult>
      */
-    public function run(ServerConnectionInterface $connection): array
+    public function run(ServerConnectionInterface $connection, ?ProtocolVersion $expected = null): array
     {
-        $this->results = [];
-        $this->tools = [];
-        $this->prompts = [];
-        $this->hasResourceTemplates = false;
-        $this->modern = $connection->getProtocolVersion()?->isModern() ?? false;
+        $this->reset($connection, $expected);
 
         $this->checkLifecycle($connection);
         $this->checkTools($connection);
@@ -93,19 +90,64 @@ final class RegressionRunner
         $this->checkErrors($connection);
         $this->checkProgress($connection);
         $this->checkClientCapabilities($connection);
+        $this->checkGatewayAsks($connection);
+        $this->checkReturnedAsks($connection);
         $this->checkApps($connection);
 
         return $this->results;
+    }
+
+    /**
+     * Only what the two sides negotiate, and that they can talk once they have:
+     * the matrix asks no more than that of the revisions older than its columns.
+     *
+     * @return list<CheckResult>
+     */
+    public function negotiate(ServerConnectionInterface $connection, ProtocolVersion $expected): array
+    {
+        $this->reset($connection, $expected);
+
+        $this->check('lifecycle', 'tools/list', function () use ($connection): string {
+            return \sprintf('%d tool(s)', \count($connection->getTools()));
+        });
+
+        return $this->results;
+    }
+
+    private function reset(ServerConnectionInterface $connection, ?ProtocolVersion $expected = null): void
+    {
+        $this->results = [];
+        $this->tools = [];
+        $this->prompts = [];
+        $this->hasResourceTemplates = false;
+
+        // Asking for the version is what connects, so it goes first and fails
+        // as a check rather than as an exception out of the runner.
+        $this->check('lifecycle', 'negotiated revision', function () use ($connection, $expected): string {
+            $version = $connection->getProtocolVersion();
+
+            if (null === $version) {
+                throw new \RuntimeException('No protocol version was negotiated.');
+            }
+
+            if (null !== $expected && $expected !== $version) {
+                throw new \RuntimeException(\sprintf('Settled on %s, expected %s.', $version->value, $expected->value));
+            }
+
+            return null === $expected ? $version->value : \sprintf('%s, as expected', $version->value);
+        });
+
+        $this->revision = RevisionSupport::of($connection->getProtocolVersion() ?? ProtocolVersion::V2025_11_25);
     }
 
     // -- lifecycle -----------------------------------------------------------
 
     private function checkLifecycle(ServerConnectionInterface $connection): void
     {
-        if ($this->modern) {
+        if (!$this->revision->ping) {
             // SEP-2577. Both are gone with the session they served: there is no
             // connection to keep alive, and no session to hang a log level on.
-            $this->results[] = CheckResult::skip('lifecycle', 'ping', 'removed by 2026-07-28');
+            $this->results[] = CheckResult::skip('lifecycle', 'ping', $this->revision->removed());
         } else {
             $this->check('lifecycle', 'ping', function () use ($connection): string {
                 $connection->ping();
@@ -125,16 +167,6 @@ final class RegressionRunner
             }
 
             return \sprintf('%s %s', $info->name, $info->version);
-        });
-
-        $this->check('lifecycle', 'protocol version', function () use ($connection): string {
-            $version = $connection->getProtocolVersion();
-
-            if (null === $version) {
-                throw new \RuntimeException('No protocol version was negotiated.');
-            }
-
-            return $version->value;
         });
 
         $this->check('lifecycle', 'instructions', function () use ($connection): string {
@@ -177,8 +209,8 @@ final class RegressionRunner
             return implode(', ', $declared);
         });
 
-        if ($this->modern) {
-            $this->results[] = CheckResult::skip('lifecycle', 'logging/setLevel', 'removed by 2026-07-28; the level rides on each request');
+        if (!$this->revision->setLoggingLevel) {
+            $this->results[] = CheckResult::skip('lifecycle', 'logging/setLevel', $this->revision->removed('the level rides on each request'));
         } else {
             $this->check('lifecycle', 'logging/setLevel', function () use ($connection): string {
                 $connection->setLoggingLevel(LoggingLevel::Info);
@@ -790,121 +822,222 @@ final class RegressionRunner
                     : implode(', ', $advertised);
             });
         }
+    }
+
+    // -- asking the client, through the gateway --------------------------------
+
+    /**
+     * The handshake era's way: the tool calls ClientGateway and blocks until the
+     * client has answered a request the server sent it.
+     *
+     * On a revision without server-initiated requests, roots and sampling cannot
+     * work this way, and the checks turn around: the server has to refuse, not
+     * hang and not pretend. Elicitation keeps working — the SDK replays it as a
+     * second round trip — so its checks run in both columns.
+     */
+    private function checkGatewayAsks(ServerConnectionInterface $connection): void
+    {
+        $group = 'asks: gateway';
 
         if ($this->hasTool('list_client_roots')) {
-            $this->check('client capabilities', 'roots/list round trip', function () use ($connection): string {
-                $data = $this->structured($connection->callTool('list_client_roots'));
-
-                if ('ok' !== ($data['status'] ?? null)) {
-                    return 'skipped by the server: '.($data['message'] ?? 'no reason given');
-                }
-
-                if ([] === ($data['roots'] ?? [])) {
-                    throw new \RuntimeException('The client answered roots/list with an empty list.');
-                }
-
-                return \sprintf('%d root(s): %s', \count($data['roots']), implode(', ', array_column($data['roots'], 'name')));
-            });
+            $this->revision->serverInitiatedRequests
+                ? $this->checkRoots($connection, $group, 'list_client_roots')
+                : $this->checkRefused($connection, $group, 'roots/list', 'list_client_roots');
         }
 
         if ($this->hasTool('import_proposals_from_roots')) {
-            $this->check('client capabilities', 'the server reads files from a client root', function () use ($connection): string {
-                $data = $this->structured($connection->callTool('import_proposals_from_roots'));
+            if ($this->revision->serverInitiatedRequests) {
+                $this->check($group, 'the server reads files from a client root', function () use ($connection): string {
+                    $data = $this->structured($connection->callTool('import_proposals_from_roots'));
 
-                if ('ok' !== ($data['status'] ?? null)) {
-                    return 'skipped by the server: '.($data['message'] ?? 'no reason given');
-                }
+                    if ('ok' !== ($data['status'] ?? null)) {
+                        return 'skipped by the server: '.($data['message'] ?? 'no reason given');
+                    }
 
-                if (0 === $data['scanned']) {
-                    throw new \RuntimeException('No *.proposal.md file was found in any advertised root; is workspace/ empty?');
-                }
+                    if (0 === $data['scanned']) {
+                        throw new \RuntimeException('No *.proposal.md file was found in any advertised root; is workspace/ empty?');
+                    }
 
-                // Idempotent: a second pass must import nothing and skip everything.
-                $again = $this->structured($connection->callTool('import_proposals_from_roots'));
+                    // Idempotent: a second pass must import nothing and skip everything.
+                    $again = $this->structured($connection->callTool('import_proposals_from_roots'));
 
-                if ([] !== $again['imported']) {
-                    throw new \RuntimeException('Re-running the import created duplicates.');
-                }
+                    if ([] !== $again['imported']) {
+                        throw new \RuntimeException('Re-running the import created duplicates.');
+                    }
 
-                return \sprintf('%d file(s) scanned, %d imported, re-run imported nothing', $data['scanned'], \count($data['imported']));
-            });
+                    return \sprintf('%d file(s) scanned, %d imported, re-run imported nothing', $data['scanned'], \count($data['imported']));
+                });
+            } else {
+                $this->checkRefused($connection, $group, 'a roots-based import', 'import_proposals_from_roots');
+            }
         }
 
         if ($this->hasTool('submit_proposal')) {
-            $this->check('client capabilities', 'elicitation round trip', function () use ($connection): string {
-                $this->elicitation->reset();
-                $this->elicitation->script([
-                    'name' => 'Regression Speaker',
-                    'email' => 'regression@example.com',
-                    'consent' => 'accepted',
-                ]);
-
-                $data = $this->structured($connection->callTool('submit_proposal', [
-                    'title' => 'A Proposal From The Regression Suite '.bin2hex(random_bytes(4)),
-                    'abstract' => 'Submitted by the regression runner to prove that the elicitation round trip works end to end, over a real transport.',
-                ]));
-
-                if ('needs_input' === ($data['status'] ?? null)) {
-                    return 'skipped by the server: the client advertises no elicitation';
-                }
-
-                if ('submitted' !== ($data['status'] ?? null)) {
-                    throw new \RuntimeException('The proposal was not submitted: '.($data['message'] ?? 'no reason given'));
-                }
-
-                if ('Regression Speaker' !== ($data['proposal']['speaker_name'] ?? null)) {
-                    throw new \RuntimeException('The scripted elicitation answer did not reach the server.');
-                }
-
-                return 'the scripted answer reached the handler';
-            });
-
-            $this->check('client capabilities', 'a declined elicitation is handled', function () use ($connection): string {
-                $this->elicitation->reset();
-                $this->elicitation->scriptDecline();
-
-                $data = $this->structured($connection->callTool('submit_proposal', [
-                    'title' => 'A Proposal That Will Be Declined',
-                    'abstract' => 'The regression runner declines the elicitation, and the server has to survive that without writing anything.',
-                ]));
-
-                $this->elicitation->reset();
-
-                if ('needs_input' === ($data['status'] ?? null)) {
-                    return 'skipped by the server: the client advertises no elicitation';
-                }
-
-                if ('declined' !== ($data['status'] ?? null)) {
-                    throw new \RuntimeException('A declined elicitation did not produce a "declined" status.');
-                }
-
-                return 'nothing was written';
-            });
+            $this->checkElicitation($connection, $group, 'submit_proposal');
         }
 
         if ($this->hasTool('review_proposal') && $this->hasTool('list_proposals')) {
-            $this->check('client capabilities', 'sampling round trip', function () use ($connection): string {
-                $proposals = $this->structured($connection->callTool('list_proposals'))['proposals'] ?? [];
-
-                if ([] === $proposals) {
-                    return 'skipped: no proposal to review';
-                }
-
-                $result = $connection->callTool('review_proposal', ['proposalId' => $proposals[0]['id']]);
-
-                if ($result->isError) {
-                    throw new \RuntimeException('review_proposal reported an error: '.$this->text($result));
-                }
-
-                $text = $this->text($result);
-
-                if (!str_contains($text, ScriptedSamplingHandler::MODEL)) {
-                    return 'skipped by the server: the client advertises no sampling';
-                }
-
-                return 'the scripted model answered and the review was stored';
-            });
+            $this->revision->serverInitiatedRequests
+                ? $this->checkSampling($connection, $group, 'review_proposal')
+                : $this->checkRefused($connection, $group, 'sampling/createMessage', 'review_proposal', ['proposalId' => $this->firstProposalId($connection)]);
         }
+    }
+
+    // -- asking the client, by returning the ask -----------------------------
+
+    /**
+     * The way that serves every revision: the tool returns an
+     * InputRequiredResult, and either the client retries with the answer
+     * (2026-07-28) or the SDK's InputRequiredShim sends the ask as a real
+     * request and re-enters the tool (handshake era).
+     *
+     * Same tools, same assertions, both columns — a cell that differs is the
+     * finding.
+     */
+    private function checkReturnedAsks(ServerConnectionInterface $connection): void
+    {
+        $group = 'asks: returned';
+
+        if ($this->hasTool('list_client_roots_mrtr')) {
+            $this->checkRoots($connection, $group, 'list_client_roots_mrtr');
+        }
+
+        if ($this->hasTool('submit_proposal_mrtr')) {
+            $this->checkElicitation($connection, $group, 'submit_proposal_mrtr');
+        }
+
+        if ($this->hasTool('review_proposal_mrtr') && $this->hasTool('list_proposals')) {
+            $this->checkSampling($connection, $group, 'review_proposal_mrtr');
+        }
+    }
+
+    private function checkRoots(ServerConnectionInterface $connection, string $group, string $tool): void
+    {
+        $this->check($group, 'roots/list round trip', function () use ($connection, $tool): string {
+            $data = $this->structured($connection->callTool($tool));
+
+            if ('ok' !== ($data['status'] ?? null)) {
+                return 'skipped by the server: '.($data['message'] ?? 'no reason given');
+            }
+
+            if ([] === ($data['roots'] ?? [])) {
+                throw new \RuntimeException('The client answered roots/list with an empty list.');
+            }
+
+            return \sprintf('%d root(s): %s', \count($data['roots']), implode(', ', array_column($data['roots'], 'name')));
+        });
+    }
+
+    private function checkElicitation(ServerConnectionInterface $connection, string $group, string $tool): void
+    {
+        $this->check($group, 'elicitation round trip', function () use ($connection, $tool): string {
+            $this->elicitation->reset();
+            $this->elicitation->script([
+                'name' => 'Regression Speaker',
+                'email' => 'regression@example.com',
+                'consent' => 'accepted',
+            ]);
+
+            $data = $this->structured($connection->callTool($tool, [
+                'title' => 'A Proposal From The Regression Suite '.bin2hex(random_bytes(4)),
+                'abstract' => 'Submitted by the regression runner to prove that the elicitation round trip works end to end, over a real transport.',
+            ]));
+
+            if ('needs_input' === ($data['status'] ?? null)) {
+                return 'skipped by the server: the client advertises no elicitation';
+            }
+
+            if ('submitted' !== ($data['status'] ?? null)) {
+                throw new \RuntimeException('The proposal was not submitted: '.($data['message'] ?? 'no reason given'));
+            }
+
+            if ('Regression Speaker' !== ($data['proposal']['speaker_name'] ?? null)) {
+                throw new \RuntimeException('The scripted elicitation answer did not reach the server.');
+            }
+
+            return 'the scripted answer reached the handler';
+        });
+
+        $this->check($group, 'a declined elicitation is handled', function () use ($connection, $tool): string {
+            $this->elicitation->reset();
+            $this->elicitation->scriptDecline();
+
+            $data = $this->structured($connection->callTool($tool, [
+                'title' => 'A Proposal That Will Be Declined',
+                'abstract' => 'The regression runner declines the elicitation, and the server has to survive that without writing anything.',
+            ]));
+
+            $this->elicitation->reset();
+
+            if ('needs_input' === ($data['status'] ?? null)) {
+                return 'skipped by the server: the client advertises no elicitation';
+            }
+
+            if ('declined' !== ($data['status'] ?? null)) {
+                throw new \RuntimeException('A declined elicitation did not produce a "declined" status.');
+            }
+
+            return 'nothing was written';
+        });
+    }
+
+    private function checkSampling(ServerConnectionInterface $connection, string $group, string $tool): void
+    {
+        $this->check($group, 'sampling round trip', function () use ($connection, $tool): string {
+            $proposals = $this->structured($connection->callTool('list_proposals'))['proposals'] ?? [];
+
+            if ([] === $proposals) {
+                return 'skipped: no proposal to review';
+            }
+
+            $result = $connection->callTool($tool, ['proposalId' => $proposals[0]['id']]);
+
+            if ($result->isError) {
+                throw new \RuntimeException($tool.' reported an error: '.$this->text($result));
+            }
+
+            $text = $this->text($result);
+
+            if (!str_contains($text, ScriptedSamplingHandler::MODEL)) {
+                return 'skipped by the server: the client advertises no sampling';
+            }
+
+            return 'the scripted model answered and the review was stored';
+        });
+    }
+
+    /**
+     * Pins how a gateway ask fails on a revision that cannot carry it: as a
+     * protocol error naming the cause, at once.
+     *
+     * Arguable rather than broken — see docs/patches.md, where the wording of
+     * that error is recorded: it says sampling and roots were removed, while
+     * the same SDK serves both as returned asks.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function checkRefused(ServerConnectionInterface $connection, string $group, string $what, string $tool, array $arguments = []): void
+    {
+        $this->check($group, \sprintf('%s through the gateway is refused', $what), function () use ($connection, $tool, $arguments): string {
+            try {
+                $result = $connection->callTool($tool, $arguments);
+            } catch (McpBundleException $e) {
+                $reason = $this->firstLine((string) ($e->getPrevious()?->getMessage() ?? $e->getMessage()));
+
+                if (!str_contains($reason, 'no server-initiated requests')) {
+                    throw new \RuntimeException('Refused, but not for the reason the revision gives: '.$reason);
+                }
+
+                return \sprintf('refused as a protocol error; on %s the tool has to return the ask instead', $this->revision->version->value);
+            }
+
+            throw new \RuntimeException(\sprintf('%s answered on %s, which has no way to send the request it makes%s.', $tool, $this->revision->version->value, $result->isError ? ' (as an isError result)' : ''));
+        });
+    }
+
+    private function firstProposalId(ServerConnectionInterface $connection): int
+    {
+        return (int) ($this->structured($connection->callTool('list_proposals'))['proposals'][0]['id'] ?? 1);
     }
 
     // -- MCP Apps ------------------------------------------------------------

@@ -16,7 +16,7 @@ use Mcp\Schema\Root;
  * This is the client half of {@see \App\Mcp\Tool\Organizer\WorkspaceTool}: the
  * demo talks to itself, so the same process plays both sides of the round trip.
  *
- * Wired through `mcp.clients.regression.roots`, an option this demo found missing
+ * Wired through `mcp.clients.<name>.roots`, an option this demo found missing
  * and carried a patch for until it landed upstream — see docs/patches.md.
  */
 final class WorkspaceRootsProvider implements RootsCallbackInterface

@@ -161,7 +161,7 @@ regression-stdio: ## Run the regression suite over STDIO only (no web server nee
 
 .PHONY: regression-2026
 regression-2026: ## Run the 2026-07-28 checks only (needs `make serve`)
-	$(CONSOLE) app:mcp:regression modern
+	$(CONSOLE) app:mcp:regression --client=modern
 
 .PHONY: check
 check: test regression-stdio ## Everything that runs without a web server

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Regression;
 
 use App\Mcp\Regression\CheckResult;
+use App\Mcp\Regression\MatrixCell;
+use App\Mcp\Regression\ProtocolMatrix;
 use App\Mcp\Regression\RegressionRunner;
 use App\Tests\Support\McpTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -16,43 +18,49 @@ use Symfony\AI\McpBundle\Exception\ConnectionException;
  * The regression suite as a test: the same checks `app:mcp:regression` runs,
  * asserted instead of printed.
  *
- * The STDIO transport is what makes this runnable in CI without a web server —
- * the client spawns `bin/console mcp:server <name>` itself, so one `phpunit`
- * invocation covers the whole stack from the SDK's client down to the bundle's
- * server wiring and back.
+ * One test case per STDIO cell of the protocol matrix — both eras against every
+ * STDIO server, plus the negotiation cells for the older revisions. The STDIO
+ * transport is what makes this runnable in CI without a web server: the client
+ * spawns `bin/console mcp:server <name>` itself, so one `phpunit` invocation
+ * covers the whole stack from the SDK's client down to the bundle's server
+ * wiring and back.
  *
+ * @see \App\Mcp\Regression\ProtocolMatrix for the cells
  * @see \App\Mcp\Regression\RegressionRunner for what each check does
  */
 #[Group('regression')]
 final class StdioRegressionTest extends McpTestCase
 {
     /**
-     * @return iterable<string, array{string, string}>
+     * @return iterable<string, array{MatrixCell}>
      */
-    public static function connectionProvider(): iterable
+    public static function cellProvider(): iterable
     {
-        yield 'conference over stdio' => ['regression', 'conference_stdio'];
-        yield 'organizer over stdio' => ['regression', 'organizer_stdio'];
-        // The same server, on the 2026-07-28 wire: STDIO serves both eras.
-        yield 'conference over stdio, 2026-07-28' => ['modern', 'conference_2026_stdio'];
+        foreach (ProtocolMatrix::cells() as $cell) {
+            if ('stdio' === $cell->transport()) {
+                yield $cell->label() => [$cell];
+            }
+        }
     }
 
-    #[DataProvider('connectionProvider')]
-    public function testEveryCheckPasses(string $clientName, string $server): void
+    #[DataProvider('cellProvider')]
+    public function testEveryCheckPasses(MatrixCell $cell): void
     {
         self::bootKernel();
         $container = self::getContainer();
 
-        $client = $container->get('mcp.client.'.$clientName);
-        \assert($client instanceof McpClientInterface);
+        $matrix = $container->get(ProtocolMatrix::class);
+        \assert($matrix instanceof ProtocolMatrix);
 
         $runner = $container->get(RegressionRunner::class);
         \assert($runner instanceof RegressionRunner);
 
-        $connection = $client->get($server);
+        $connection = $matrix->connect($cell);
 
         try {
-            $results = $runner->run($connection);
+            $results = $cell->full
+                ? $runner->run($connection, $cell->expected)
+                : $runner->negotiate($connection, $cell->expected);
         } finally {
             $connection->disconnect();
         }
@@ -64,11 +72,30 @@ final class StdioRegressionTest extends McpTestCase
         $this->assertSame([], array_map(
             static fn (CheckResult $r): string => \sprintf('[%s] %s: %s', $r->group, $r->name, $r->detail),
             $failures,
-        ), \sprintf('%d of %d checks failed against "%s".', \count($failures), \count($results), $server));
+        ), \sprintf('%d of %d checks failed in "%s".', \count($failures), \count($results), $cell->label()));
+
+        if (!$cell->full) {
+            return;
+        }
 
         // A suite that skips everything would also report zero failures.
         $passed = \count(array_filter($results, static fn (CheckResult $r): bool => $r->isPass()));
         $this->assertGreaterThanOrEqual(25, $passed, 'Too few checks actually ran; something is being skipped that should not be.');
+
+        // The point of the matrix: whatever a server can ask a client, it can
+        // ask in either era once it returns the ask. Skipping counts as losing
+        // it, so these have to pass, in both columns alike.
+        if ('organizer_stdio' === $cell->server) {
+            $this->assertSame([
+                'roots/list round trip',
+                'elicitation round trip',
+                'a declined elicitation is handled',
+                'sampling round trip',
+            ], array_values(array_map(
+                static fn (CheckResult $r): string => $r->name,
+                array_filter($results, static fn (CheckResult $r): bool => 'asks: returned' === $r->group && $r->isPass()),
+            )));
+        }
     }
 
     public function testTheMinimalClientSeesNoOptionalCapabilities(): void

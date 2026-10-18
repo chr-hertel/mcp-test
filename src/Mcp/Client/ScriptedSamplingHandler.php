@@ -23,7 +23,7 @@ use Psr\Log\LoggerInterface;
  *
  * Swapping in a real model is a one-class change — implement the same interface
  * over Symfony AI's `Agent`/`Platform` and point
- * `mcp.clients.regression.sampling` at it.
+ * `mcp.clients.<name>.sampling` at it.
  */
 final class ScriptedSamplingHandler implements SamplingCallbackInterface
 {

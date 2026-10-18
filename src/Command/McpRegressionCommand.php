@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Mcp\Regression\CheckResult;
+use App\Mcp\Regression\MatrixCell;
 use App\Mcp\Regression\ModernRegressionRunner;
+use App\Mcp\Regression\ProtocolMatrix;
 use App\Mcp\Regression\RegressionRunner;
-use Symfony\AI\McpBundle\Client\McpClientInterface;
-use Symfony\AI\McpBundle\Client\ServerConnectionInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -16,7 +16,6 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\DependencyInjection\Attribute\Target;
 
 /**
  * Runs the regression suite against this application's own MCP servers.
@@ -33,13 +32,7 @@ use Symfony\Component\DependencyInjection\Attribute\Target;
 final class McpRegressionCommand extends Command
 {
     public function __construct(
-        #[Target('regression')]
-        private readonly McpClientInterface $client,
-        // A second client only because the revision is a property of the client
-        // rather than of one server: `protocol_version: '2026-07-28'` puts the
-        // SDK's client on the modern wire, and the checks below cannot tell.
-        #[Target('modern')]
-        private readonly McpClientInterface $modernClient,
+        private readonly ProtocolMatrix $matrix,
         private readonly RegressionRunner $runner,
         private readonly ModernRegressionRunner $modernRunner,
         private readonly string $modernEndpoint,
@@ -50,12 +43,14 @@ final class McpRegressionCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addArgument('server', InputArgument::OPTIONAL, 'One configured server connection; all of them when omitted.')
+            ->addArgument('server', InputArgument::OPTIONAL, 'One server connection, in every column; all of them when omitted.')
+            ->addOption('client', 'c', InputOption::VALUE_REQUIRED, 'Only run the cells of this client ("handshake", "modern" or "legacy").')
             ->addOption('transport', 't', InputOption::VALUE_REQUIRED, 'Only run connections of this transport ("stdio" or "http").')
             ->addOption('quiet-passes', null, InputOption::VALUE_NONE, 'Only print checks that did not pass.')
-            ->addOption('skip-modern', null, InputOption::VALUE_NONE, 'Skip the 2026-07-28 checks, which need the web server.')
+            ->addOption('skip-modern', null, InputOption::VALUE_NONE, 'Skip the raw 2026-07-28 probes, which need the web server.')
             ->setHelp(<<<'HELP'
-                Runs every check against every configured server of the "regression" client:
+                Runs every cell of the protocol matrix — each server connection once per
+                protocol era, plus the negotiation cells for older revisions:
 
                     <info>php %command.full_name%</info>
 
@@ -65,9 +60,13 @@ final class McpRegressionCommand extends Command
                     <info>symfony server:start -d</info>
                     <info>php %command.full_name% --transport=http</info>
 
-                A single connection, verbosely:
+                One server in both eras, verbosely:
 
-                    <info>php %command.full_name% conference_stdio</info>
+                    <info>php %command.full_name% organizer_stdio</info>
+
+                One era, with the raw protocol probes underneath it:
+
+                    <info>php %command.full_name% --client=modern</info>
                 HELP);
     }
 
@@ -76,30 +75,32 @@ final class McpRegressionCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $io->title('MCP regression suite');
 
-        $connections = $this->connections($input, $io);
+        $cells = $this->cells($input);
 
-        if ([] === $connections && !$this->shouldRunModern($input)) {
-            $io->warning('No connection matched.');
+        if ([] === $cells && !$this->shouldRunModern($input)) {
+            $io->warning('No cell matched.');
 
             return Command::INVALID;
         }
 
         $failed = 0;
-        $summary = [];
+        $grid = [];
+        $negotiated = [];
 
-        foreach ($connections as $name => $connection) {
-            $io->section($name);
+        foreach ($cells as $cell) {
+            $io->section($cell->label());
+
+            $connection = $this->matrix->connect($cell);
 
             try {
-                $results = $this->runner->run($connection);
+                $results = $cell->full
+                    ? $this->runner->run($connection, $cell->expected)
+                    : $this->runner->negotiate($connection, $cell->expected);
             } catch (\Throwable $e) {
-                $io->error(\sprintf('%s could not be reached: %s', $name, $e->getMessage()));
-                $summary[] = [$name, '—', '—', '—', '<fg=red>unreachable</>'];
-                ++$failed;
-
-                continue;
+                $io->error(\sprintf('%s could not be reached: %s', $cell->label(), $e->getMessage()));
+                $results = [CheckResult::fail('lifecycle', 'connect', $e->getMessage())];
             } finally {
-                // STDIO connections own a child process; do not carry it into the next server.
+                // STDIO connections own a child process; do not carry it into the next cell.
                 $connection->disconnect();
             }
 
@@ -109,21 +110,32 @@ final class McpRegressionCommand extends Command
             $failedHere = $counts[CheckResult::FAIL] ?? 0;
             $failed += $failedHere;
 
-            $summary[] = [
-                $name,
-                (string) ($counts[CheckResult::PASS] ?? 0),
-                (string) ($counts[CheckResult::SKIP] ?? 0),
-                (string) $failedHere,
-                $failedHere > 0 ? '<fg=red>fail</>' : '<fg=green>ok</>',
-            ];
+            if ($cell->full) {
+                $grid[$cell->server][$cell->client] = \sprintf(
+                    '%s %d / %d / %d',
+                    $failedHere > 0 ? '<fg=red>FAIL</>' : '<fg=green>ok</>',
+                    $counts[CheckResult::PASS] ?? 0,
+                    $counts[CheckResult::SKIP] ?? 0,
+                    $failedHere,
+                );
+            } else {
+                $negotiated[] = [
+                    $cell->client,
+                    $cell->server,
+                    $cell->expected->value,
+                    $failedHere > 0 ? '<fg=red>FAIL</>' : '<fg=green>ok</>',
+                ];
+            }
         }
+
+        $raw = null;
 
         if ($this->shouldRunModern($input)) {
             $io->section('2026-07-28 protocol probes');
 
-            // Not a connection of either client: what is checked here is what a
-            // conforming client never does — a missing version, a header that
-            // disagrees with the body, a tampered requestState. See
+            // Not a cell of the matrix: what is checked here is what a conforming
+            // client never does — a missing version, a header that disagrees with
+            // the body, a tampered requestState. See
             // App\Mcp\Regression\ModernRegressionRunner.
             $results = $this->modernRunner->run($this->modernEndpoint);
             $this->render($io, $results, (bool) $input->getOption('quiet-passes'));
@@ -131,18 +143,32 @@ final class McpRegressionCommand extends Command
             $counts = array_count_values(array_map(static fn (CheckResult $r): string => $r->status, $results));
             $failedHere = $counts[CheckResult::FAIL] ?? 0;
             $failed += $failedHere;
-
-            $summary[] = [
-                'modern (raw)',
-                (string) ($counts[CheckResult::PASS] ?? 0),
-                (string) ($counts[CheckResult::SKIP] ?? 0),
-                (string) $failedHere,
-                $failedHere > 0 ? '<fg=red>fail</>' : '<fg=green>ok</>',
-            ];
+            $raw = \sprintf('%s %d / %d / %d', $failedHere > 0 ? '<fg=red>FAIL</>' : '<fg=green>ok</>', $counts[CheckResult::PASS] ?? 0, $counts[CheckResult::SKIP] ?? 0, $failedHere);
         }
 
         $io->section('Summary');
-        $io->table(['Connection', 'Passed', 'Skipped', 'Failed', 'Result'], $summary);
+
+        if ([] !== $grid) {
+            $columns = array_keys(ProtocolMatrix::COLUMNS);
+            $io->writeln('Passed / skipped / failed, per server and protocol era:');
+            $io->table(
+                ['Server', ...array_map(static fn (string $c): string => \sprintf('%s (%s)', $c, ProtocolMatrix::COLUMNS[$c]->value), $columns)],
+                array_map(
+                    static fn (string $server): array => [$server, ...array_map(static fn (string $c): string => $grid[$server][$c] ?? '—', $columns)],
+                    array_keys($grid),
+                ),
+            );
+        }
+
+        if ([] !== $negotiated) {
+            $io->writeln('Negotiation only, for revisions older than either column:');
+            $io->table(['Client', 'Server', 'Settles on', 'Result'], $negotiated);
+        }
+
+        if (null !== $raw) {
+            $io->writeln(\sprintf('Raw 2026-07-28 probes against %s: %s', $this->modernEndpoint, $raw));
+            $io->newLine();
+        }
 
         if ($failed > 0) {
             $io->error(\sprintf('%d check(s) failed.', $failed));
@@ -156,22 +182,17 @@ final class McpRegressionCommand extends Command
     }
 
     /**
-     * The modern endpoint is HTTP-only, so it runs unless the transport filter
-     * excludes HTTP or a single STDIO connection was named.
+     * The raw probes are HTTP-only, so they run unless the filters rule out HTTP,
+     * the modern era, or name a single server.
      */
     private function shouldRunModern(InputInterface $input): bool
     {
-        if ($input->getOption('skip-modern')) {
+        if ($input->getOption('skip-modern') || 'stdio' === $input->getOption('transport')) {
             return false;
         }
 
-        if ('stdio' === $input->getOption('transport')) {
-            return false;
-        }
-
-        $only = $input->getArgument('server');
-
-        return null === $only || 'modern' === $only;
+        return null === $input->getArgument('server')
+            && \in_array($input->getOption('client'), [null, 'modern'], true);
     }
 
     /**
@@ -214,49 +235,19 @@ final class McpRegressionCommand extends Command
     }
 
     /**
-     * @return array<string, ServerConnectionInterface>
+     * @return list<MatrixCell>
      */
-    private function connections(InputInterface $input, SymfonyStyle $io): array
+    private function cells(InputInterface $input): array
     {
-        $only = $input->getArgument('server');
+        $server = $input->getArgument('server');
+        $client = $input->getOption('client');
         $transport = $input->getOption('transport');
 
-        // "modern" is the 2026-07-28 surface rather than one connection: the
-        // suite over the modern wire, and then the protocol probes underneath it.
-        if ('modern' === $only) {
-            return iterator_to_array($this->modernClient);
-        }
-
-        if (null !== $only) {
-            foreach ([$this->client, $this->modernClient] as $client) {
-                if ($client->has($only)) {
-                    return [$only => $client->get($only)];
-                }
-            }
-
-            $io->error(\sprintf(
-                'Unknown server "%s". Configured: %s.',
-                $only,
-                implode(', ', [...$this->client->getServerNames(), ...$this->modernClient->getServerNames()]),
-            ));
-
-            return [];
-        }
-
-        $connections = [];
-
-        foreach ([$this->client, $this->modernClient] as $client) {
-            foreach ($client as $name => $connection) {
-                // The transport is not introspectable from the connection, so the
-                // naming convention in config/packages/mcp.yaml is what we filter on.
-                if (null !== $transport && !str_ends_with($name, '_'.$transport)) {
-                    continue;
-                }
-
-                $connections[$name] = $connection;
-            }
-        }
-
-        return $connections;
+        return array_values(array_filter(
+            ProtocolMatrix::cells(),
+            static fn (MatrixCell $cell): bool => (null === $server || $server === $cell->server)
+                && (null === $client || $client === $cell->client)
+                && (null === $transport || $transport === $cell->transport()),
+        ));
     }
 }
