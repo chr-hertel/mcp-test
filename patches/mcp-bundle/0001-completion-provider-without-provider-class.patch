@@ -1,0 +1,103 @@
+From b9861b2f64236146974c48f0d4e05841cd79691d Mon Sep 17 00:00:00 2001
+From: Christopher Hertel <mail@christopher-hertel.de>
+Date: Wed, 7 Oct 2026 09:31:58 +0200
+Subject: [PATCH] [MCP Bundle] Stop reading CompletionProvider's removed
+ providerClass
+
+mcp/sdk removed the dead providerClass argument (modelcontextprotocol/php-sdk#499),
+so a completion provider given as values or enum makes McpPass read an undefined
+property and the container fails to compile. Read provider only and require the
+SDK version that ships the removal.
+---
+ src/mcp-bundle/composer.json                  |  2 +-
+ .../src/DependencyInjection/McpPass.php       |  3 +-
+ .../tests/DependencyInjection/McpPassTest.php | 33 +++++++++++++++++++
+ 3 files changed, 35 insertions(+), 3 deletions(-)
+
+diff --git a/src/mcp-bundle/composer.json b/src/mcp-bundle/composer.json
+index 888f7c06..3359abef 100644
+--- a/src/mcp-bundle/composer.json
++++ b/src/mcp-bundle/composer.json
+@@ -14,7 +14,7 @@
+         }
+     ],
+     "require": {
+-        "mcp/sdk": "^0.8.1",
++        "mcp/sdk": "^0.9",
+         "php-http/discovery": "^1.20",
+         "symfony/config": "^7.3|^8.0",
+         "symfony/console": "^7.3|^8.0",
+diff --git a/src/mcp-bundle/src/DependencyInjection/McpPass.php b/src/mcp-bundle/src/DependencyInjection/McpPass.php
+index 10bcc757..10a758da 100644
+--- a/src/mcp-bundle/src/DependencyInjection/McpPass.php
++++ b/src/mcp-bundle/src/DependencyInjection/McpPass.php
+@@ -233,8 +233,7 @@ final class McpPass implements CompilerPassInterface
+         $classes = [];
+         foreach ((new \ReflectionMethod($class, $method))->getParameters() as $parameter) {
+             foreach ($parameter->getAttributes(CompletionProvider::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+-                $instance = $attribute->newInstance();
+-                $provider = $instance->provider ?? $instance->providerClass;
++                $provider = $attribute->newInstance()->provider;
+                 if (\is_string($provider) && class_exists($provider)) {
+                     $classes[] = $provider;
+                 }
+diff --git a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
+index 9d7586f8..83c871fe 100644
+--- a/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
++++ b/src/mcp-bundle/tests/DependencyInjection/McpPassTest.php
+@@ -11,11 +11,13 @@
+ 
+ namespace Symfony\AI\McpBundle\Tests\DependencyInjection;
+ 
++use Mcp\Capability\Attribute\CompletionProvider;
+ use Mcp\Capability\Attribute\McpPrompt;
+ use Mcp\Capability\Attribute\McpResource;
+ use Mcp\Capability\Attribute\McpResourceTemplate;
+ use Mcp\Capability\Attribute\McpTool;
+ use Mcp\Capability\Attribute\Schema;
++use Mcp\Capability\Completion\ProviderInterface;
+ use Mcp\Schema\Icon;
+ use Mcp\Schema\ToolAnnotations;
+ use PHPUnit\Framework\TestCase;
+@@ -165,6 +167,18 @@ final class McpPassTest extends TestCase
+         $this->assertSame('greeting', $calls[0][1][1]);
+     }
+ 
++    public function testReferencesCompletionProviderServices()
++    {
++        $container = $this->containerWithBuilder();
++        $container->setDefinition(TopicCompletionProvider::class, new Definition(TopicCompletionProvider::class));
++        $container->setDefinition(CompletingPrompt::class, (new Definition(CompletingPrompt::class))->addTag('mcp.prompt', ['method' => 'talk']));
++
++        (new McpPass())->process($container);
++
++        $this->assertCount(1, $this->callsNamed($container, 'addPrompt'));
++        $this->assertArrayHasKey(TopicCompletionProvider::class, $this->locatorServices($container));
++    }
++
+     public function testRegistersResource()
+     {
+         $container = $this->containerWithBuilder();
+@@ -556,3 +570,22 @@ class PercentTemplate
+         return $name;
+     }
+ }
++
++class TopicCompletionProvider implements ProviderInterface
++{
++    public function getCompletions(string $currentValue): array
++    {
++        return ['mcp', 'symfony'];
++    }
++}
++
++class CompletingPrompt
++{
++    #[McpPrompt(name: 'talk')]
++    public function talk(
++        #[CompletionProvider(provider: TopicCompletionProvider::class)] string $topic,
++        #[CompletionProvider(values: ['short', 'long'])] string $length,
++    ): string {
++        return $topic.' '.$length;
++    }
++}

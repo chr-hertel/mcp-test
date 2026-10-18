@@ -61,13 +61,14 @@ The SDK is no longer cloned. Every patch we carried against it has landed on its
 `main`, so a clone would be a slower copy of what composer installs anyway — and
 `dev-main` re-resolves the tip on every install, which is the drift detection a
 clone was giving us. The alias is needed because the bundle requires a release
-(`mcp/sdk: ^0.8.1` on `main`, `^0.9` once chr-hertel/ai#73 lands) and no dev
+(`mcp/sdk: ^0.8.1` on `main`, `^0.9` with the first patch below) and no dev
 branch satisfies a release constraint on its own; `bin/link-sdk` reads the same
 alias for the bundle's own suite, so the two suites cannot resolve two different
 SDKs.
 
-The bundle stays a clone even with no patches to apply, because protocol revision
-2026-07-28 is only on `main` and not in any release. `make upstream-check` is what
+The bundle is a clone because protocol revision 2026-07-28 is only on `main`
+and not in any release, and because it carries patches again — see *Four
+patches again* at the end. `make upstream-check` is what
 tells you whether that clone still matches the tip, and the sign-off table in
 [`release-checklist.md`](release-checklist.md) is where the SHA you tested
 against belongs.
@@ -1082,3 +1083,23 @@ registry from `setRegistry()` when a bus is set, let the caller say it is wired,
 or have the bundle call `setCapabilities()` and give up detection. Not patched:
 the fix belongs in the SDK, and which of the three is a decision for there. The
 probes stay red until it lands; that is the point of them.
+
+### Four patches again — 18 October 2026
+
+The SDK 0.9 round left four commits in the bundle clone, and the demo depends on
+all of them: its SDK alias needs the first, its `server capabilities` check the
+second, the organizer's config the third. With `patches/mcp-bundle/` empty, CI —
+which clones symfony/ai `main` and applies that directory — would have failed
+before running a test. So the series is back, one commit per file, exported with
+`git format-patch` and applied to a pristine clone of `main` at `91849e5`, where
+the bundle's own suite passes (210 tests) and PHPStan finds nothing.
+
+| Patch | What and why | Written up in | BC |
+|---|---|---|---|
+| `0001-completion-provider-without-provider-class` | `McpPass` stops reading the `providerClass` php-sdk#499 removed, and the bundle requires `mcp/sdk: ^0.9` | *The SDK heads for 0.9*; upstream as symfony/ai#2692, a draft until the SDK tags 0.9 | the raised SDK requirement |
+| `0002-connection-server-capabilities` | `ServerConnectionInterface::getServerCapabilities()` passes on what the server declared (php-sdk#542) | *The SDK heads for 0.9* | a new method on an interface: breaks a user-land implementation |
+| `0003-session-lock` | `session.lock` exposes the SDK's opt-in per-session lock (php-sdk#584) | *The 0.9-pre integration branch* | none, opt-in |
+| `0004-stdio-serves-both-eras-docs` | the docs stop saying STDIO serves the handshake era only (php-sdk#546) | *The 0.9-pre integration branch* | none, docs |
+
+The first can only go upstream once the SDK tags 0.9, and the second and third
+build on it; they leave the series one at a time as they land.

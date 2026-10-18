@@ -80,8 +80,7 @@ Nothing below this line is worth doing if these are red.
 
   This runs the *bundle's own* suite and its static analysis against the clone,
   with `bin/link-sdk` pointing it at the SDK the demo installed. A failure here
-  is upstream's or a patch's, not the demo's — and with `patches/` empty it can
-  only be upstream's.
+  is upstream's or a patch's, not the demo's.
 
 - [ ] `make upstream-check` → `up to date` for the clone
 
@@ -92,18 +91,22 @@ Nothing below this line is worth doing if these are red.
 
   A `MOVED` line means the branch advanced. Re-derive the patches against the new
   tip, re-run the upstream suite, re-export, and update `docs/patches.md` —
-  `CLAUDE.md` has the procedure. With `patches/` empty there is nothing to
-  re-derive, but the clone still has to be moved and the suites re-run.
+  `CLAUDE.md` has the procedure.
 
 - [ ] `make apply-patches` → silent
 
-  `patches/` is empty, so there is nothing to say. **`FAILED` is fatal** —
+  One line per patch in `patches/mcp-bundle/`, four of them. **`FAILED` is fatal** —
   nothing in the series fits either way, so upstream moved underneath it. With a
   patch back in the series, the verdict to expect here is `in place` or
   `overlaps`, never `applied`: `applied` is normal on a fresh clone and
   suspicious on one you have been working in.
 
 - [ ] `bin/export-patches --dry-run` → `the series is empty and the clone is clean`
+
+  It reads uncommitted changes, and the current series lives as commits on the
+  clone's `mcp-bundle-*` branches, so it was exported with `git format-patch`
+  instead — see *Four patches again* in [`patches.md`](patches.md). "Empty"
+  here means no stray change sits in the clone, which is still worth knowing.
 
   With patches in the series this instead reports that the series reproduces the
   working tree and runs the bundle's suite in a pristine clone — the
