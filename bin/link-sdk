@@ -34,7 +34,13 @@ composer --working-dir="$bundle" --quiet config repositories.mcp-sdk \
 # An update rather than install + update: once the alias moves, the bundle's lock
 # no longer satisfies its constraint and `install` refuses to start, while an
 # update of the one package installs everything else from the lock as it is.
-composer --working-dir="$bundle" --quiet --no-interaction update mcp/sdk
+# A fresh clone has no lock at all — symfony/ai commits none — and a partial
+# update refuses to start without one, so there it resolves everything.
+if [ -f "$bundle/composer.lock" ]; then
+    composer --working-dir="$bundle" --quiet --no-interaction update mcp/sdk
+else
+    composer --working-dir="$bundle" --quiet --no-interaction update
+fi
 
 # The repository entry has done its job once vendor/ points at the SDK. Leaving
 # it in composer.json would put it in `git diff`, and from there into a patch —
